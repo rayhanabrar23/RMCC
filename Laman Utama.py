@@ -1,9 +1,21 @@
-# streamlitll.py (File Utama/Index)
+# Laman Utama.py (File Utama/Index)
 
 import streamlit as st
 
 def main():
+    # Mengatur layout dan judul halaman
     st.set_page_config(page_title="LL & CL Dashboard", layout="wide")
+    
+    # -----------------------------------------------------------
+    # KODE UNTUK MENAMBAH LOGO DI SIDEBAR MENGGUNAKAN URL LANGSUNG
+    # -----------------------------------------------------------
+    logo_url = "https://www.pei.co.id/images/logo-grey-3x.png" 
+    
+    # Menampilkan gambar logo di awal sidebar
+    st.sidebar.image(logo_url, use_column_width=False, width=150)
+    
+    # -----------------------------------------------------------
+    
     st.title("📊 LL & CL Report Generator Dashboard")
     st.markdown("""
     Selamat datang! Aplikasi ini telah dibagi menjadi dua halaman (aplikasi) terpisah yang dapat Anda akses melalui **menu navigasi di sebelah kiri** (ikon **>**).

@@ -1,11 +1,11 @@
-# pages/03_UMA_Scraper.py (VERSI FINAL - FILE UPLOADER)
+# pages/03_UMA_Scraper.py
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 from io import BytesIO
 
-# --- FUNGSI UTAMA STREAMLIT ---
+# --- FUNGSI UTAMA STREAMLIT (Diberi nama 'app') ---
 def app():
     st.title("📂 UMA (Unusual Market Activity) - File Upload")
     st.markdown("""
@@ -44,25 +44,25 @@ def app():
         st.info("✅ File berhasil diunggah. Tampilkan data...")
         
         try:
+            # Membaca file
             if uploaded_file.name.endswith('.csv'):
                 df_uma = pd.read_csv(uploaded_file)
             else:
                 df_uma = pd.read_excel(uploaded_file)
             
-            # Asumsi: Jika data mentah dari IDX, kolom 'AnnouncementDate' harus ada
+            # Penggantian nama kolom jika ini adalah data mentah dari API IDX
             if 'AnnouncementDate' in df_uma.columns:
                 df_uma.rename(columns={
                     'AnnouncementDate': 'Tanggal', 
                     'Description': 'Keterangan UMA',
                     'Code': 'Kode Emiten' 
                 }, inplace=True)
-            # Jika kolom tidak ada, aplikasi tetap berjalan dengan kolom yang ada
 
             # Tampilkan data yang diunggah
             st.subheader("Data UMA yang Diunggah:")
             st.dataframe(df_uma, use_container_width=True)
             
-            # Sediakan tombol download (memungkinkan pengguna memformat ulang)
+            # Sediakan tombol download
             excel_buffer = BytesIO()
             with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
                 df_uma.to_excel(writer, sheet_name=f'UMA_Uploaded', index=False)
@@ -78,5 +78,3 @@ def app():
 
         except Exception as e:
             st.error(f"❌ Gagal memproses file. Pastikan format kolom benar. Error: {e}")
-            
-# Menghapus if __name__ main karena ini adalah halaman multi-page

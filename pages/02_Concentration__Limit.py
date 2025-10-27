@@ -244,10 +244,10 @@ def main():
                     file_name=f'CL_Result_{date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
-                st.balloons()
 
             except Exception as e:
                 st.error(f"❌ Gagal dalam perhitungan CL. Pastikan format file benar. Error: {e}")
 
 if __name__ == '__main__':
     main()
+

@@ -8,9 +8,13 @@ from io import BytesIO
 
 # --- KONSTANTA ---
 UMA_API_URL = "https://www.idx.co.id/api/idx-corp/latest_uma"
-# Header yang membuat permintaan terlihat seperti dari browser Chrome untuk menghindari 403 Forbidden
+PROXY_URL = "https://cors-anywhere.herokuapp.com/" # Proxy untuk mengatasi 403
+
+# Header untuk menyamarkan permintaan dari server Cloud
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    'Origin': 'https://www.idx.co.id',
+    'Referer': 'https://www.idx.co.id/id/berita/unusual-market-activity-uma/',
     'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'en-US,en;q=0.5'
 }
@@ -18,14 +22,15 @@ HEADERS = {
 # --- FUNGSI UTAMA UNTUK MENGAMBIL DATA ---
 @st.cache_data(ttl=3600) # Data di-cache selama 1 jam
 def fetch_uma_data(target_month_name):
-    """Mengambil data UMA langsung dari API IDX dan memfilternya berdasarkan bulan."""
+    """Mengambil data UMA melalui proxy untuk menghindari pemblokiran 403."""
     
     st.info(f"Mengambil data UMA terbaru dari IDX...")
+    final_url = PROXY_URL + UMA_API_URL
     
     try:
-        # Panggilan API, DENGAN headers=HEADERS
-        response = requests.get(UMA_API_URL, headers=HEADERS, timeout=15)
-        response.raise_for_status() # Cek error HTTP
+        # Panggilan API ke PROXY
+        response = requests.get(final_url, headers=HEADERS, timeout=20)
+        response.raise_for_status()
         
         data = response.json()
         
@@ -36,7 +41,6 @@ def fetch_uma_data(target_month_name):
         # Konversi ke DataFrame
         df_uma = pd.DataFrame(data['data'])
         
-        # Kolom hasil dari API: 'AnnouncementDate', 'Description', 'Code'
         df_uma.rename(columns={
             'AnnouncementDate': 'Tanggal', 
             'Description': 'Keterangan UMA',
@@ -51,25 +55,23 @@ def fetch_uma_data(target_month_name):
             df_uma['Tanggal'].str.contains(target_month_name, case=False, na=False)
         ].copy()
         
-        # Memilih dan menata ulang kolom
         df_result = df_filtered[['Tanggal', 'Kode Emiten', 'Keterangan UMA']]
 
         return df_result
         
     except requests.exceptions.HTTPError as e:
-        # Pesan error yang lebih informatif untuk 403
         st.error(f"❌ Gagal koneksi ke API IDX. Server menolak akses (Error: {e.response.status_code}).")
-        st.warning("Hal ini sering terjadi karena Server IDX memblokir request dari server Cloud.")
+        st.warning("Server IDX menolak permintaan ini. (Coba lagi atau hubungi admin server IDX).")
         return pd.DataFrame()
     except Exception as e:
-        st.error(f"❌ Terjadi kesalahan dalam pemrosesan data: {e}")
+        st.error(f"❌ Terjadi kesalahan umum. Error: {e}")
         return pd.DataFrame()
 
 
 # --- FUNGSI UTAMA STREAMLIT ---
 def app():
     st.title("🕷️ UMA (Unusual Market Activity) Scraper")
-    st.markdown("Alat ini mengambil data UMA langsung dari *API tersembunyi* IDX. Metode ini stabil dan cepat.")
+    st.markdown("Alat ini mengambil data UMA melalui proxy untuk mengatasi pemblokiran server Cloud.")
 
     # Kontrol Input
     col1, col2 = st.columns(2)

@@ -1,4 +1,4 @@
-# Laman Utama.py (File Utama/Index)
+# streamlitll.py (File Utama/Index)
 
 import streamlit as st
 
@@ -12,7 +12,8 @@ def main():
     logo_url = "https://www.pei.co.id/images/logo-grey-3x.png" 
     
     # Menampilkan gambar logo di awal sidebar
-    st.sidebar.image(logo_url, use_column_width=False, width=150)
+    # PARAMETER use_column_width DIGANTI MENJADI use_container_width
+    st.sidebar.image(logo_url, use_container_width=False, width=150)
     
     # -----------------------------------------------------------
     

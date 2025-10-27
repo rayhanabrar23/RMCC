@@ -294,7 +294,6 @@ def main():
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
-                st.balloons()
             else:
                 st.error("Gagal menghasilkan file. Cek pesan error di atas.")
     else:
@@ -302,3 +301,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

@@ -1,4 +1,4 @@
-# streamlitll.py (File Utama/Index)
+# streamlitll.py (File Utama/Index - VERSI AKHIR DAN BERSIH)
 
 import streamlit as st
 
@@ -14,8 +14,6 @@ def main():
     # Menggunakan fitur bawaan st.logo()
     st.logo(logo_url, icon_image=None) 
     
-    # Anda juga bisa menyesuaikan lebar jika logo terlalu besar:
-    # st.logo(logo_url, icon_image=None, link="https://www.pei.co.id/") 
     # -----------------------------------------------------------
     
     # Konten halaman utama Anda

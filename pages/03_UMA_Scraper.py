@@ -8,6 +8,12 @@ from io import BytesIO
 
 # --- KONSTANTA ---
 UMA_API_URL = "https://www.idx.co.id/api/idx-corp/latest_uma"
+# Header yang membuat permintaan terlihat seperti dari browser Chrome untuk menghindari 403 Forbidden
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.5'
+}
 
 # --- FUNGSI UTAMA UNTUK MENGAMBIL DATA ---
 @st.cache_data(ttl=3600) # Data di-cache selama 1 jam
@@ -17,8 +23,8 @@ def fetch_uma_data(target_month_name):
     st.info(f"Mengambil data UMA terbaru dari IDX...")
     
     try:
-        # Panggilan API
-        response = requests.get(UMA_API_URL, timeout=15)
+        # Panggilan API, DENGAN headers=HEADERS
+        response = requests.get(UMA_API_URL, headers=HEADERS, timeout=15)
         response.raise_for_status() # Cek error HTTP
         
         data = response.json()
@@ -34,7 +40,7 @@ def fetch_uma_data(target_month_name):
         df_uma.rename(columns={
             'AnnouncementDate': 'Tanggal', 
             'Description': 'Keterangan UMA',
-            'Code': 'Kode Emiten' # Kode emiten sudah bersih di kolom 'Code' dari API
+            'Code': 'Kode Emiten' 
         }, inplace=True)
         
         # Format Tanggal
@@ -50,8 +56,10 @@ def fetch_uma_data(target_month_name):
 
         return df_result
         
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ Gagal koneksi ke API IDX. Cek koneksi internet atau URL. Error: {e}")
+    except requests.exceptions.HTTPError as e:
+        # Pesan error yang lebih informatif untuk 403
+        st.error(f"❌ Gagal koneksi ke API IDX. Server menolak akses (Error: {e.response.status_code}).")
+        st.warning("Hal ini sering terjadi karena Server IDX memblokir request dari server Cloud.")
         return pd.DataFrame()
     except Exception as e:
         st.error(f"❌ Terjadi kesalahan dalam pemrosesan data: {e}")
@@ -61,12 +69,11 @@ def fetch_uma_data(target_month_name):
 # --- FUNGSI UTAMA STREAMLIT ---
 def app():
     st.title("🕷️ UMA (Unusual Market Activity) Scraper")
-    st.markdown("Alat ini mengambil data UMA langsung dari *API tersembunyi* IDX. **Metode ini lebih stabil dan cepat dibandingkan *Web Scraping* (Selenium).**")
+    st.markdown("Alat ini mengambil data UMA langsung dari *API tersembunyi* IDX. Metode ini stabil dan cepat.")
 
     # Kontrol Input
     col1, col2 = st.columns(2)
     
-    # Mendapatkan daftar bulan saat ini
     current_year = datetime.now().year
     
     target_month_num = col1.selectbox(
@@ -80,12 +87,10 @@ def app():
         range(current_year, current_year - 3, -1)
     )
 
-    # Format bulan menjadi nama 3 huruf (cth: Okt, Jan, Sep)
     target_month_name = datetime(target_year, target_month_num, 1).strftime("%b")
 
     if st.button(f"Ambil Data UMA Bulan {target_month_name} {target_year}", type="primary"):
         
-        # Hapus st.spinner() karena st.cache_data sudah memberikan indikasi loading
         df_result = fetch_uma_data(target_month_name)
         
         if not df_result.empty:

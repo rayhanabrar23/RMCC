@@ -5,11 +5,11 @@ import pandas as pd
 from datetime import datetime
 from io import BytesIO
 
-# --- FUNGSI UTAMA STREAMLIT (Diberi nama 'app') ---
+# --- FUNGSI UTAMA STREAMLIT (Wajib bernama main() atau app() di file page) ---
 def app():
     st.title("📂 UMA (Unusual Market Activity) - File Upload")
     st.markdown("""
-    Karena adanya pemblokiran server (Error 403), fungsi *Scraper* otomatis dinonaktifkan.
+    Fungsi *scrapper* otomatis dinonaktifkan karena pemblokiran server IDX (Error 403).
     
     **Langkah:**
     1. Unduh data UMA dari website IDX (atau siapkan file Anda).
@@ -22,7 +22,7 @@ def app():
         type=['xlsx', 'csv']
     )
     
-    # Kontrol Input (Filter)
+    # Kontrol Input (Filter - untuk penamaan file output)
     col1, col2 = st.columns(2)
     current_year = datetime.now().year
     
@@ -50,7 +50,7 @@ def app():
             else:
                 df_uma = pd.read_excel(uploaded_file)
             
-            # Penggantian nama kolom jika ini adalah data mentah dari API IDX
+            # Penggantian nama kolom (opsional, jika file input adalah hasil dump API IDX)
             if 'AnnouncementDate' in df_uma.columns:
                 df_uma.rename(columns={
                     'AnnouncementDate': 'Tanggal', 

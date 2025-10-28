@@ -29,7 +29,7 @@ FINAL_COLUMNS_LL = [
 ]
 
 # ============================
-# FUNGSI PEMROSESAN LL
+# FUNGSI PEMROSESAN LL (TIDAK BERUBAH)
 # ============================
 
 def process_lendable_limit(uploaded_files, template_file_data):
@@ -44,7 +44,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
         df_borr_pos = pd.read_excel(uploaded_files['BorrPosition.xlsx'], header=0, engine='openpyxl')
     except Exception as e:
         st.error(f"❌ Gagal membaca salah satu file input LL. Error: {e}")
-        return None, None, None # <-- PERUBAHAN: Tambah None
+        return None, None, None
 
     output_xlsx_buffer = BytesIO()
     
@@ -83,7 +83,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             st.success("✅ Persiapan data selesai.")
         except Exception as e:
             st.error(f"❌ Gagal di Bagian 1/2: Persiapan data. Error: {e}")
-            return None, None, None # <-- PERUBAHAN: Tambah None
+            return None, None, None
 
 
     # --- BAGIAN 3: Hitung LL ---
@@ -162,7 +162,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
 
         except Exception as e:
             st.error(f"❌ Gagal di Bagian 2: Perhitungan Lendable Limit. Error: {e}")
-            return None, None, None # <-- PERUBAHAN: Tambah None
+            return None, None, None
 
     # --- BAGIAN 4: COPY HASIL KE TEMPLATE ---
     with st.spinner('3/3 - Menyalin Lendable Limit Result ke Template...'):
@@ -172,6 +172,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             
             thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
+            # Definisikan NamedStyle yang sama dengan yang digunakan di bawah
             default_style_ll = NamedStyle(name="DefaultStyleLL_LLpage")
             default_style_ll.font = Font(name='Roboto Condensed', size=9)
             default_style_ll.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
@@ -232,14 +233,81 @@ def process_lendable_limit(uploaded_files, template_file_data):
             
             st.success("✅ Berhasil menyalin data ke template.")
             
-            return output_xlsx_buffer, output_template_buffer, df_result_static # <-- PERUBAHAN: Mengembalikan df_result_static
+            return output_xlsx_buffer, output_template_buffer, df_result_static
 
         except Exception as e:
             st.error(f"❌ Gagal menyalin dan memformat ke template. Error: {e}")
-            return None, None, None # <-- PERUBAHAN: Tambah None
+            return None, None, None
 
 # ============================
-# ANTARMUKA LL
+# FUNGSI BARU UNTUK APLIKASI STYLE (MEMASTIKAN FORMAT)
+# ============================
+def apply_simple_ll_styles(df_result, buffer):
+    """Menerapkan style dasar template (font dan number format) ke file sederhana."""
+    
+    # Buat style baru (Style yang sama dengan NumberStyleLL_LLpage)
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    
+    default_style = NamedStyle(name="SimpleDefaultStyleLL")
+    default_style.font = Font(name='Roboto Condensed', size=9)
+    default_style.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    default_style.border = thin_border
+    
+    text_left_style = NamedStyle(name="SimpleTextLeftStyleLL")
+    text_left_style.font = Font(name='Roboto Condensed', size=9)
+    text_left_style.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    text_left_style.border = thin_border
+    
+    number_style = NamedStyle(name="SimpleNumberStyleLL")
+    number_style.font = default_style.font
+    number_style.alignment = default_style.alignment
+    number_style.border = default_style.border
+    number_style.number_format = '#,##0' # Format ribuan
+    
+    # Simpan DataFrame ke buffer menggunakan openpyxl
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df_result.to_excel(writer, sheet_name='LL Sederhana', index=False)
+        
+        # Ambil workbook dan worksheet
+        workbook = writer.book
+        worksheet = writer.sheets['LL Sederhana']
+        
+        # Tambahkan NamedStyle ke workbook agar bisa digunakan
+        if "SimpleDefaultStyleLL" not in workbook.named_styles: workbook.add_named_style(default_style)
+        if "SimpleTextLeftStyleLL" not in workbook.named_styles: workbook.add_named_style(text_left_style)
+        if "SimpleNumberStyleLL" not in workbook.named_styles: workbook.add_named_style(number_style)
+
+        # Aplikasikan style ke sel data (baris dimulai dari 2, karena baris 1 adalah header)
+        for row_idx, row in enumerate(worksheet.iter_rows(min_row=2, max_col=3), start=2):
+            # Kolom 1 (A): Stock Code
+            row[0].style = default_style
+            row[0].value = str(row[0].value) if pd.notna(row[0].value) else ""
+            
+            # Kolom 2 (B): Stock Name
+            row[1].style = text_left_style
+            row[1].value = str(row[1].value) if pd.notna(row[1].value) else ""
+            
+            # Kolom 3 (C): Available Lendable Limit (format angka)
+            row[2].style = number_style
+            try:
+                if pd.notna(row[2].value):
+                    row[2].value = int(row[2].value) if row[2].value == int(row[2].value) else float(row[2].value)
+                else:
+                    row[2].value = 0
+            except (ValueError, TypeError):
+                row[2].value = 0
+                
+        # Atur lebar kolom
+        worksheet.column_dimensions['A'].width = 15
+        worksheet.column_dimensions['B'].width = 30
+        worksheet.column_dimensions['C'].width = 25
+        
+    buffer.seek(0)
+    return buffer
+
+
+# ============================
+# ANTARMUKA LL (MAIN)
 # ============================
 
 def main():
@@ -273,24 +341,23 @@ def main():
             
             template_file_data = BytesIO(template_file.getvalue())
 
-            # PERUBAHAN: Menerima df_result_static dari fungsi pemroses
+            # Menerima df_result_static dari fungsi pemroses
             output_xlsx_buffer, output_template_buffer, df_result_static = process_lendable_limit(uploaded_files, template_file_data)
             
-            # PERUBAHAN: Menambahkan pengecekan df_result_static
+            # Menambahkan pengecekan df_result_static
             if output_xlsx_buffer and output_template_buffer and df_result_static is not None:
                 date_str = datetime.now().strftime('%Y%m%d')
                 
-                # --- LOGIKA UNTUK DOWNLOAD SEDERHANA BARU ---
+                # --- LOGIKA UNTUK DOWNLOAD SEDERHANA DENGAN FORMAT ---
                 # 1. Pilih hanya 3 kolom yang diminta
                 simple_ll_df = df_result_static[['Stock Code', 'Stock Name', 'Available Lendable Limit']].copy()
                 
-                # 2. Konversi DataFrame sederhana ke buffer Excel
+                # 2. Panggil fungsi baru untuk memformat dan mengkonversi ke buffer
                 simple_ll_buffer = BytesIO()
-                simple_ll_df.to_excel(simple_ll_buffer, index=False)
-                simple_ll_buffer.seek(0)
+                simple_ll_buffer = apply_simple_ll_styles(simple_ll_df, simple_ll_buffer)
                 # ---------------------------------------------
                 
-                # PERUBAHAN: Menjadi 3 kolom untuk 3 tombol download
+                # Menjadi 3 kolom untuk 3 tombol download
                 col_down1, col_down2, col_down3 = st.columns(3)
 
                 col_down1.download_button(
@@ -307,11 +374,11 @@ def main():
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
-                # TOMBOL DOWNLOAD BARU
+                # TOMBOL DOWNLOAD BARU (DENGAN FORMAT TEMPLATE)
                 col_down3.download_button(
-                    label="⬇️ Unduh Stock LL Sederhana",
+                    label="⬇️ Unduh Stock LL Sederhana (Berformat)",
                     data=simple_ll_buffer,
-                    file_name=f'Stock_LL_Sederhana_{date_str}.xlsx',
+                    file_name=f'Stock_LL_Sederhana_Berformat_{date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 

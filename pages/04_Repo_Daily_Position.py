@@ -24,7 +24,7 @@ def main():
         repo_file = st.file_uploader(
             '1. Unggah File Repo Position Template (.xlsx)', 
             type=['xlsx'], 
-            key='repo_main'
+            key='Reverse Repo Bonds Daily Position'
         )
     with col2:
         # File harian PHEI (Simulasi untuk Lookup)
@@ -32,7 +32,7 @@ def main():
         phei_lookup_file = st.file_uploader(
             '2. Unggah File Lookup Harian PHEI (CSV/Excel)', 
             type=['xlsx', 'csv'], 
-            key='phei_lookup',
+            key='20251027_SeriesAll_PEI',
             help="File ini berisi Instrument Code dan Fair Price PHEI. Jika CSV, pastikan menggunakan koma sebagai pemisah."
         )
     
@@ -92,4 +92,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 

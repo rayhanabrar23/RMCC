@@ -290,7 +290,7 @@ def main():
                 col_down2.download_button(
                     label="⬇️ Unduh File Template LL Terisi",
                     data=output_template_buffer,
-                    file_name=f'LL_Result-{date_str}.xlsx',
+                    file_name=f'Lendable Limit {date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
@@ -301,4 +301,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 

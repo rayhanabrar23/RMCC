@@ -19,6 +19,44 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
 # ============================
+# FUNGSI UNTUK BACKGROUND GAMBAR LOKAL
+# ============================
+def get_base64_of_bin_file(bin_file):
+    """Mengonversi file biner (gambar) menjadi string Base64."""
+    try:
+        with open(bin_file, 'rb') as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+    except FileNotFoundError:
+        st.error(f"❌ Gagal menemukan file gambar: {bin_file}. Pastikan file ada di folder yang sama.")
+        return ""
+
+def set_background_from_local(file_path): # Ganti png_file menjadi file_path untuk generalisasi
+    """Menyuntikkan CSS dengan gambar latar belakang lokal yang sudah di-Base64."""
+    bin_str = get_base64_of_bin_file(file_path)
+    if bin_str:
+        # Deteksi tipe MIME berdasarkan ekstensi file
+        if file_path.lower().endswith(('.jpg', '.jpeg')):
+            mime_type = 'image/jpeg'
+        elif file_path.lower().endswith('.png'):
+            mime_type = 'image/png'
+        else:
+            mime_type = 'image/jpeg' # Default ke JPEG jika tidak dikenali
+
+        page_bg_img = f"""
+        <style>
+        .stApp {{
+        background-image: url("data:{mime_type};base64,{bin_str}");
+        background-size: cover; 
+        background-repeat: no-repeat;
+        background-attachment: fixed; 
+        background-position: center;
+        }}
+        </style>
+        """
+        st.markdown(page_bg_img, unsafe_allow_html=True)
+
+# ============================
 # KONFIGURASI GLOBAL LL
 # ============================
 STOCK_CODE_BLACKLIST = ['BEBS', 'IPPE', 'WMPP', 'WMUU']
@@ -537,3 +575,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

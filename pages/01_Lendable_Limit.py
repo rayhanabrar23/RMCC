@@ -3,6 +3,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Font, Alignment, Border, Side, NamedStyle, numbers
 from io import BytesIO
@@ -586,5 +587,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 

@@ -44,7 +44,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
         df_borr_pos = pd.read_excel(uploaded_files['BorrPosition.xlsx'], header=0, engine='openpyxl')
     except Exception as e:
         st.error(f"❌ Gagal membaca salah satu file input LL. Error: {e}")
-        return None, None
+        return None, None, None # <-- PERUBAHAN: Tambah None
 
     output_xlsx_buffer = BytesIO()
     
@@ -83,7 +83,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             st.success("✅ Persiapan data selesai.")
         except Exception as e:
             st.error(f"❌ Gagal di Bagian 1/2: Persiapan data. Error: {e}")
-            return None, None
+            return None, None, None # <-- PERUBAHAN: Tambah None
 
 
     # --- BAGIAN 3: Hitung LL ---
@@ -162,7 +162,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
 
         except Exception as e:
             st.error(f"❌ Gagal di Bagian 2: Perhitungan Lendable Limit. Error: {e}")
-            return None, None
+            return None, None, None # <-- PERUBAHAN: Tambah None
 
     # --- BAGIAN 4: COPY HASIL KE TEMPLATE ---
     with st.spinner('3/3 - Menyalin Lendable Limit Result ke Template...'):
@@ -207,10 +207,10 @@ def process_lendable_limit(uploaded_files, template_file_data):
                 for c_idx, value in enumerate(row, start=start_col):
                     cell = ws_template.cell(row=r_idx, column=c_idx, value=value)
                     
-                    if c_idx - 1 == 0: 
+                    if c_idx - 1 == 0:  
                         cell.style = default_style_ll
                         cell.value = str(value) if pd.notna(value) else ""
-                    elif c_idx - 1 == 1: 
+                    elif c_idx - 1 == 1:  
                         cell.style = text_left_style_ll
                         cell.value = str(value) if pd.notna(value) else ""
                     elif c_idx - 1 in number_cols_idx:
@@ -232,11 +232,11 @@ def process_lendable_limit(uploaded_files, template_file_data):
             
             st.success("✅ Berhasil menyalin data ke template.")
             
-            return output_xlsx_buffer, output_template_buffer
+            return output_xlsx_buffer, output_template_buffer, df_result_static # <-- PERUBAHAN: Mengembalikan df_result_static
 
         except Exception as e:
             st.error(f"❌ Gagal menyalin dan memformat ke template. Error: {e}")
-            return None, None
+            return None, None, None # <-- PERUBAHAN: Tambah None
 
 # ============================
 # ANTARMUKA LL
@@ -273,12 +273,25 @@ def main():
             
             template_file_data = BytesIO(template_file.getvalue())
 
-            output_xlsx_buffer, output_template_buffer = process_lendable_limit(uploaded_files, template_file_data)
+            # PERUBAHAN: Menerima df_result_static dari fungsi pemroses
+            output_xlsx_buffer, output_template_buffer, df_result_static = process_lendable_limit(uploaded_files, template_file_data)
             
-            if output_xlsx_buffer and output_template_buffer:
+            # PERUBAHAN: Menambahkan pengecekan df_result_static
+            if output_xlsx_buffer and output_template_buffer and df_result_static is not None:
                 date_str = datetime.now().strftime('%Y%m%d')
                 
-                col_down1, col_down2 = st.columns(2)
+                # --- LOGIKA UNTUK DOWNLOAD SEDERHANA BARU ---
+                # 1. Pilih hanya 3 kolom yang diminta
+                simple_ll_df = df_result_static[['Stock Code', 'Stock Name', 'Available Lendable Limit']].copy()
+                
+                # 2. Konversi DataFrame sederhana ke buffer Excel
+                simple_ll_buffer = BytesIO()
+                simple_ll_df.to_excel(simple_ll_buffer, index=False)
+                simple_ll_buffer.seek(0)
+                # ---------------------------------------------
+                
+                # PERUBAHAN: Menjadi 3 kolom untuk 3 tombol download
+                col_down1, col_down2, col_down3 = st.columns(3)
 
                 col_down1.download_button(
                     label="⬇️ Unduh File Konsolidasi (Semua Sheet LL)",
@@ -294,6 +307,14 @@ def main():
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
+                # TOMBOL DOWNLOAD BARU
+                col_down3.download_button(
+                    label="⬇️ Unduh Stock LL Sederhana",
+                    data=simple_ll_buffer,
+                    file_name=f'Stock_LL_Sederhana_{date_str}.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+                
             else:
                 st.error("Gagal menghasilkan file. Cek pesan error di atas.")
     else:
@@ -301,5 +322,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-

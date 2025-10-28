@@ -172,7 +172,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             
             thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
-            # Definisikan NamedStyle yang sama dengan yang digunakan di bawah
+            # Definisikan NamedStyle 
             default_style_ll = NamedStyle(name="DefaultStyleLL_LLpage")
             default_style_ll.font = Font(name='Roboto Condensed', size=9)
             default_style_ll.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
@@ -189,7 +189,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             number_style_ll.font = default_style_ll.font
             number_style_ll.alignment = default_style_ll.alignment
             number_style_ll.border = default_style_ll.border
-            number_style_ll.number_format = '#,##0' # Format ribuan
+            number_style_ll.number_format = '#,##0' 
             if "NumberStyleLL_LLpage" not in wb_template.named_styles: wb_template.add_named_style(number_style_ll)
 
 
@@ -240,47 +240,62 @@ def process_lendable_limit(uploaded_files, template_file_data):
             return None, None, None
 
 # ============================
-# FUNGSI BARU UNTUK MENGISI TEMPLATE SEDERHANA (TIDAK BERUBAH)
+# FUNGSI REVISI UNTUK MENGISI TEMPLATE EKSTERNAL
 # ============================
 def fill_simple_ll_template(df_result, template_buffer):
-    """Mengisi template 3-kolom yang sudah memiliki format yang benar."""
+    """Mengisi template 3-kolom yang sudah memiliki format yang benar, dimulai dari Row 7."""
     
     # 1. Load template sederhana
     wb = load_workbook(template_buffer)
-    ws = wb.active # Asumsi data di sheet pertama
+    ws = wb.active 
     
-    start_row = 2 # Asumsi baris 1 adalah header, data mulai dari baris 2
+    # Menetapkan baris awal data berdasarkan permintaan user
+    start_row = 7 
     
-    # 2. Hapus data lama (jika ada)
+    # 2. Hapus data lama (jika ada) - Menghapus dari baris start_row ke bawah
     if ws.max_row >= start_row:
         ws.delete_rows(start_row, ws.max_row - start_row + 1)
 
-    # 3. Tentukan style dari template baris kedua/ketiga (asumsi sudah diformat)
-    # Ini adalah kunci: kita menyalin style dari sel yang sudah diformat di template.
-    try:
-        style_stock_code = ws.cell(row=2, column=1).style
-        style_stock_name = ws.cell(row=2, column=2).style
-        style_available_ll = ws.cell(row=2, column=3).style
-    except:
-        # Fallback jika template benar-benar kosong atau tidak ada style
-        style_stock_code = None
-        style_stock_name = None
-        style_available_ll = None
+    # 3. Definisikan Style yang sama dengan template penuh (agar konsisten)
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
-    # 4. Tulis data baru
+    # Style untuk Stock Code (Teks, Center)
+    style_stock_code = NamedStyle(name="LL_Ext_Code")
+    style_stock_code.font = Font(name='Roboto Condensed', size=9)
+    style_stock_code.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    style_stock_code.border = thin_border
+    if "LL_Ext_Code" not in wb.named_styles: wb.add_named_style(style_stock_code)
+    
+    # Style untuk Stock Name (Teks, Left)
+    style_stock_name = NamedStyle(name="LL_Ext_Name")
+    style_stock_name.font = Font(name='Roboto Condensed', size=9)
+    style_stock_name.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    style_stock_name.border = thin_border
+    if "LL_Ext_Name" not in wb.named_styles: wb.add_named_style(style_stock_name)
+    
+    # Style untuk Available Lendable Limit (Angka, Center, #,##0)
+    style_available_ll = NamedStyle(name="LL_Ext_Limit")
+    style_available_ll.font = Font(name='Roboto Condensed', size=9)
+    style_available_ll.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    style_available_ll.border = thin_border
+    style_available_ll.number_format = '#,##0' 
+    if "LL_Ext_Limit" not in wb.named_styles: wb.add_named_style(style_available_ll)
+
+
+    # 4. Tulis data baru (Mulai dari row 7)
     for r_idx, row in enumerate(df_result.itertuples(index=False), start=start_row):
-        # Kolom A: Stock Code
+        # Kolom A (1): Stock Code
         cell_A = ws.cell(row=r_idx, column=1, value=str(row[0]) if pd.notna(row[0]) else "")
-        if style_stock_code: cell_A.style = style_stock_code
+        cell_A.style = style_stock_code
 
-        # Kolom B: Stock Name
+        # Kolom B (2): Stock Name
         cell_B = ws.cell(row=r_idx, column=2, value=str(row[1]) if pd.notna(row[1]) else "")
-        if style_stock_name: cell_B.style = style_stock_name
+        cell_B.style = style_stock_name
 
-        # Kolom C: Available Lendable Limit (Harus berupa float/int agar format #,##0 bekerja)
+        # Kolom C (3): Available Lendable Limit (Harus berupa float/int agar format #,##0 bekerja)
         value_C = int(row[2]) if pd.notna(row[2]) and row[2] == int(row[2]) else (float(row[2]) if pd.notna(row[2]) else 0)
         cell_C = ws.cell(row=r_idx, column=3, value=value_C)
-        if style_available_ll: cell_C.style = style_available_ll
+        cell_C.style = style_available_ll
         
     # 5. Simpan ke buffer baru
     output_buffer = BytesIO()
@@ -314,7 +329,6 @@ def main():
     with col_temp1:
         template_file_full = st.file_uploader('4. File Template Output LL Lengkap', type=['xlsx'], key='template_ll_full')
     with col_temp2:
-        # PERUBAHAN: Mengubah nama file template yang diunggah
         template_file_simple = st.file_uploader('5. File Template Output Lendable Limit Eksternal', type=['xlsx'], key='template_ll_simple')
 
     
@@ -340,6 +354,7 @@ def main():
                 simple_ll_df = df_result_static[['Stock Code', 'Stock Name', 'Available Lendable Limit']].copy()
                 
                 # 2. Panggil fungsi baru untuk mengisi template sederhana
+                # Menggunakan template_file_data_simple (buffer template kosong) sebagai input
                 output_template_buffer_simple = fill_simple_ll_template(simple_ll_df, template_file_data_simple)
                 # -----------------------------------------------------------
                 
@@ -364,8 +379,7 @@ def main():
                 col_down3.download_button(
                     label="⬇️ Unduh Lendable Limit Eksternal (Berformat)",
                     data=output_template_buffer_simple,
-                    # PERUBAHAN: Mengubah nama file output yang diunduh
-                    file_name=f'Lendable Limit Eksternal {date_str}.xlsx',
+                    file_name=f'Lendable Limit_{date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 

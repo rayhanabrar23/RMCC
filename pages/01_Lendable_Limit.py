@@ -7,11 +7,19 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font, Alignment, Border, Side, NamedStyle, numbers
 from io import BytesIO
 from datetime import datetime
-import os # Dibiarkan untuk menghindari error impor di fungsi lain jika ada
+import os 
 import sys
 
+# Import library untuk PDF (Dibutuhkan jika Anda memiliki tombol download PDF)
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+
 # ============================
-# KONFIGURASI GLOBAL LL (TIDAK BERUBAH)
+# KONFIGURASI GLOBAL LL
 # ============================
 STOCK_CODE_BLACKLIST = ['BEBS', 'IPPE', 'WMPP', 'WMUU']
 SHEET_INST_OLD = 'Instrument'
@@ -28,8 +36,37 @@ FINAL_COLUMNS_LL = [
     'Lendable Limit', 'Borrow Position', 'Available Lendable Limit'
 ]
 
+# === HEADER PDF SEDERHANA UNTUK MENGATASI KETERBATASAN RUANG ===
+PDF_HEADERS = [
+    'Kode', 'Nama Saham', 'QOH', 
+    '1st Lgst', '2nd Lgst', 'Total Lgst', 
+    'Qty Avail', '30% QOH', 'REPO', 
+    'LL Limit', 'Borrow Pos', 'Avail LL'
+]
+# ===============================================================
+
+
 # ============================
-# FUNGSI PEMROSESAN LL (TIDAK BERUBAH)
+# FUNGSI STYLING KONDISIONAL UNTUK TAMPILAN WEB
+# ============================
+def highlight_negative_ll(row):
+    """Menyoroti baris di mana 'Available Lendable Limit' < 0 dengan warna latar merah muda."""
+    
+    # Ambil nilai dari kolom 'Available Lendable Limit'
+    value = row['Available Lendable Limit']
+    
+    # Membuat daftar style string kosong untuk semua kolom
+    styles = [''] * len(row) 
+    
+    if value < 0:
+        # Jika nilainya negatif, terapkan style warna latar merah muda terang
+        styles = ['background-color: #FFCCCC'] * len(row) 
+    
+    return styles
+
+
+# ============================
+# FUNGSI PEMROSESAN LL
 # ============================
 def process_lendable_limit(uploaded_files, template_file_data):
     """Fungsi utama untuk memproses data LL."""
@@ -85,7 +122,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             return None, None, None
 
 
-    # --- BAGIAN 3: Hitung LL (TIDAK BERUBAH) ---
+    # --- BAGIAN 3: Hitung LL ---
     with st.spinner('2/3 - Menghitung Lendable Limit...'):
         try:
             # === Hitung Lendable Limit (LL) ===
@@ -142,6 +179,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
 
             # --- Filtering Data ---
             df_result_filtered = df_result[~df_result['Stock Code'].isin(STOCK_CODE_BLACKLIST)].copy()
+            # df_result_static adalah data hasil untuk template LL LENGKAP
             df_result_static = df_result_filtered[
                 (df_result_filtered['Lendable Limit'] > 0) | (df_result_filtered['Available Lendable Limit'] > 0)
             ].copy()
@@ -163,7 +201,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             st.error(f"❌ Gagal di Bagian 2: Perhitungan Lendable Limit. Error: {e}")
             return None, None, None
 
-    # --- BAGIAN 4: COPY HASIL KE TEMPLATE LL PENUH (TIDAK BERUBAH) ---
+    # --- BAGIAN 4: COPY HASIL KE TEMPLATE LL PENUH ---
     with st.spinner('3/3 - Menyalin Lendable Limit Result ke Template...'):
         try:
             wb_template = load_workbook(template_file_data)
@@ -171,7 +209,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             
             thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
-            # Definisikan NamedStyle 
+            # Definisikan NamedStyle
             default_style_ll = NamedStyle(name="DefaultStyleLL_LLpage")
             default_style_ll.font = Font(name='Roboto Condensed', size=9)
             default_style_ll.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
@@ -239,7 +277,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             return None, None, None
 
 # ============================
-# FUNGSI UNTUK MENGISI TEMPLATE EKSTERNAL (TIDAK BERUBAH)
+# FUNGSI UNTUK MENGISI TEMPLATE EKSTERNAL (3 KOLOM)
 # ============================
 def fill_simple_ll_template(df_result, template_buffer):
     """Mengisi template 3-kolom yang sudah memiliki format yang benar, dimulai dari Row 7, dan mengupdate tanggal di B4."""
@@ -319,7 +357,76 @@ def fill_simple_ll_template(df_result, template_buffer):
 
 
 # ============================
-# ANTARMUKA LL (MAIN) - HANYA TOMBOL DOWNLOAD (SAVE AS)
+# FUNGSI TAMBAHAN UNTUK KONVERSI KE PDF (MENGGUNAKAN df_result_static)
+# ============================
+def convert_df_full_to_pdf(df_result_static):
+    """Mengubah DataFrame LL Lengkap (df_result_static) menjadi buffer PDF."""
+    
+    pdf_buffer = BytesIO()
+    
+    # Siapkan data dari DataFrame (menggunakan header yang disederhanakan)
+    data_list = [PDF_HEADERS] 
+    
+    for row in df_result_static.itertuples(index=False):
+        # Format angka menggunakan f-string untuk ribuan
+        formatted_row = [
+            str(row[0]),  # 0: Stock Code
+            str(row[1]),  # 1: Stock Name
+            f'{row[2]:,.0f}', # 2: Quantity On Hand
+            f'{row[3]:,.0f}', # 3: First Largest
+            f'{row[4]:,.0f}', # 4: Second Largest
+            f'{row[5]:,.0f}', # 5: Total two Largest
+            f'{row[6]:,.0f}', # 6: Quantity Available
+            f'{row[7]:,.0f}', # 7: Thirty Percent On Hand
+            f'{row[8]:,.0f}', # 8: REPO
+            f'{row[9]:,.0f}', # 9: Lendable Limit
+            f'{row[10]:,.0f}',# 10: Borrow Position
+            f'{row[11]:,.0f}' # 11: Available Lendable Limit
+        ]
+        data_list.append(formatted_row)
+
+    # Menggunakan pagesize landscape (horizontal) karena kolomnya banyak (12 kolom)
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(letter),
+                            leftMargin=0.25*inch, rightMargin=0.25*inch,
+                            topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    
+    elements = []
+    
+    # Tambahkan judul dan tanggal
+    elements.append(Paragraph(f"Lendable Limit Saham Jaminan PEI (LENGKAP)", styles['Title']))
+    today_formatted = datetime.now().strftime('%d %B %Y')
+    elements.append(Paragraph(f"Tanggal: {today_formatted}", styles['Normal']))
+    elements.append(Paragraph("<br/>", styles['Normal'])) # Spasi
+
+    # Atur lebar kolom secara optimal untuk 12 kolom di kertas landscape
+    col_widths = [0.6*inch, 1.6*inch] + [0.8*inch] * 9 + [1.1*inch] 
+    table = Table(data_list, colWidths=col_widths)
+    
+    # Style Tabel
+    table_style = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F2F2F2')), 
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'), 
+        ('ALIGN', (0, 1), (0, -1), 'CENTER'), 
+        ('ALIGN', (1, 1), (1, -1), 'LEFT'),   
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+        ('FONTSIZE', (0, 0), (-1, -1), 7), 
+    ])
+    table.setStyle(table_style)
+    
+    elements.append(table)
+    
+    doc.build(elements)
+    
+    pdf_buffer.seek(0)
+    return pdf_buffer
+
+
+# ============================
+# ANTARMUKA LL (MAIN)
 # ============================
 
 def main():
@@ -332,12 +439,14 @@ def main():
         'BorrPosition.xlsx': '3. File BorrPosition',
     }
     
+    # Kolom untuk Input Data
     cols = st.columns(len(required_files))
     uploaded_files = {}
     for i, (name, help_text) in enumerate(required_files.items()):
         with cols[i]:
             uploaded_files[name] = st.file_uploader(help_text, type=['xlsx'], key=name)
             
+    # Input Template (Di baris terpisah)
     col_temp1, col_temp2 = st.columns(2)
     with col_temp1:
         template_file_full = st.file_uploader('4. File Template Output LL Lengkap', type=['xlsx'], key='template_ll_full')
@@ -362,37 +471,62 @@ def main():
             if output_xlsx_buffer and output_template_buffer_full and df_result_static is not None:
                 date_str = datetime.now().strftime('%Y%m%d')
                 
+                # =========================================================
+                # ✅ TAMPILAN DATA DI WEB DENGAN SOROTAN MERAH (BARU)
+                # =========================================================
+                st.subheader("⚠️ Lendable Limit Result (Negatif disorot Merah)")
+                
+                # Menggunakan Pandas Styler untuk menerapkan fungsi highlight
+                styled_df = df_result_static.style.apply(highlight_negative_ll, axis=1)
+                
+                # Tampilkan DataFrame yang sudah di-style di Streamlit
+                st.dataframe(styled_df, use_container_width=True)
+                
+                st.markdown("---")
+                
+                # =========================================================
                 # --- LOGIKA UNTUK OUTPUT EKSTERNAL SEDERHANA ---
                 simple_ll_df = df_result_static[['Stock Code', 'Stock Name', 'Available Lendable Limit']].copy()
                 output_template_buffer_simple = fill_simple_ll_template(simple_ll_df, template_file_data_simple)
-                # ----------------------------------------------
                 
+                # --- LOGIKA UNTUK PDF (DARI DATA LL LENGKAP) ---
+                output_pdf_buffer = convert_df_full_to_pdf(df_result_static)
+                # ----------------------------------------------
+
                 st.subheader("Tombol Unduh (Memicu 'Save As' di Browser Anda)")
                 
-                # Menjadi 3 kolom untuk 3 tombol download
-                col_down1, col_down2, col_down3 = st.columns(3)
+                # Menggunakan layout yang lebih baik: (Konsolidasi) (LL Lengkap + PDF) (LL Eksternal)
+                col_down1, col_down2, col_down_pdf, col_down3 = st.columns([1, 1, 1, 1])
 
-                # Tombol Download 1: Konsolidasi -> Memicu Save As
+                # Tombol Download 1: Konsolidasi (Save As)
                 col_down1.download_button(
-                    label="⬇️ Unduh File Konsolidasi",
+                    label="⬇️ Unduh Konsolidasi (.xlsx)",
                     data=output_xlsx_buffer,
                     file_name=f'{date_str}- LL_Konsolidasi.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
-                # Tombol Download 2: LL Lengkap -> Memicu Save As
+                # Tombol Download 2: LL Lengkap (Save As)
                 col_down2.download_button(
-                    label="⬇️ Unduh File Template LL Lengkap",
+                    label="⬇️ Unduh LL Lengkap (.xlsx)",
                     data=output_template_buffer_full,
                     file_name=f'Lendable Limit {date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
-                # Tombol Download 3: LL Eksternal -> Memicu Save As
+                # Tombol Download 4: PDF (DARI TEMPLATE LL LENGKAP)
+                col_down_pdf.download_button(
+                    label="⬇️ Unduh LL Lengkap (.pdf)",
+                    data=output_pdf_buffer,
+                    file_name=f'Lendable Limit {date_str}.pdf',
+                    mime='application/pdf'
+                )
+
+                # Tombol Download 3: LL Eksternal (Save As)
                 col_down3.download_button(
-                    label="⬇️ Unduh Lendable Limit Eksternal",
+                    label="⬇️ Unduh LL Eksternal (.xlsx)",
                     data=output_template_buffer_simple,
-                    file_name=f'Lendable Limit_{date_str}.xlsx',
+                    file_name=f'Lendable Limit Eksternal {date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
@@ -403,4 +537,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

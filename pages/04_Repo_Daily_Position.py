@@ -1,6 +1,14 @@
-# pages/02_Repo_Daily_Position.py (REVISI PADA FUNGSI main)
+# pages/04_Repo_Daily_Position.py (REVISI PADA FUNGSI main)
 
-# ... (Import dan Fungsi lainnya TIDAK BERUBAH) ...
+import streamlit as st
+import pandas as pd
+import numpy as np
+from openpyxl import load_workbook
+from openpyxl.styles import Font, Alignment, Border, Side, NamedStyle, numbers
+from io import BytesIO
+from datetime import datetime
+import os # Dibiarkan untuk menghindari error impor di fungsi lain jika ada
+import sys
 
 # ============================
 # ANTARMUKA UTAMA (REVISI BAGIAN BACA FILE)
@@ -84,3 +92,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

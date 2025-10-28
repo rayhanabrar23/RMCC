@@ -20,18 +20,8 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
 # ============================
-# ANTARMUKA LL (MAIN)
-# ============================
-
-def main():
-    # Panggil fungsi background di baris pertama main()
-    # PENTING: Pastikan nama file adalah 'background.jpg'
-    set_background_from_local('background.jpg') 
-    
-    st.title("💸 Lendable Limit (LL) Calculation")
-
-# ============================
 # FUNGSI UNTUK BACKGROUND GAMBAR LOKAL
+# (Dipindahkan dari style_utils.py, kini menyatu di sini)
 # ============================
 def get_base64_of_bin_file(bin_file):
     """Mengonversi file biner (gambar) menjadi string Base64."""
@@ -43,7 +33,7 @@ def get_base64_of_bin_file(bin_file):
         st.error(f"❌ Gagal menemukan file gambar: {bin_file}. Pastikan file ada di folder yang sama.")
         return ""
 
-def set_background_from_local(file_path): # Ganti png_file menjadi file_path untuk generalisasi
+def set_background_from_local(file_path):
     """Menyuntikkan CSS dengan gambar latar belakang lokal yang sudah di-Base64."""
     bin_str = get_base64_of_bin_file(file_path)
     if bin_str:
@@ -66,6 +56,7 @@ def set_background_from_local(file_path): # Ganti png_file menjadi file_path unt
         }}
         </style>
         """
+        # Catatan: Fungsi ini perlu dipanggil sebelum elemen Streamlit lain dimuat
         st.markdown(page_bg_img, unsafe_allow_html=True)
 
 # ============================
@@ -587,6 +578,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 

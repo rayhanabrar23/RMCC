@@ -3,7 +3,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import base64
 from openpyxl import load_workbook
 from openpyxl.styles import Font, Alignment, Border, Side, NamedStyle, numbers
 from io import BytesIO
@@ -11,22 +10,13 @@ from datetime import datetime
 import os 
 import sys
 
-# Import library untuk PDF (Dibutuhkan jika Anda memiliki tombol download PDF)
+# Import library untuk PDF
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
-
-def main():
-    # 1. TAMBAHKAN PEMANGGILAN FUNGSI BACKGROUND DI SINI
-    # Gunakan 'background.jpg' karena file ada di root folder (di luar pages/)
-    set_background_from_local('background.jpg') 
-    
-    # 2. Sisanya adalah kode Streamlit Anda
-    st.title("💸 Lendable Limit (LL) Calculation")
-    st.markdown("Unggah **tiga** file sumber data LL dan **dua** template.")
 
 # ============================
 # KONFIGURASI GLOBAL LL
@@ -506,7 +496,7 @@ def main():
                 st.subheader("Tombol Unduh (Memicu 'Save As' di Browser Anda)")
                 
                 # Menggunakan layout yang lebih baik: (Konsolidasi) (LL Lengkap + PDF) (LL Eksternal)
-                col_down1, col_down2, col_down_pdf, col_down3 = st.columns([1, 1, 1, 1])
+                col_down1, col_down2, col_down3 = st.columns([1, 1, 1])
 
                 # Tombol Download 1: Konsolidasi (Save As)
                 col_down1.download_button(
@@ -522,14 +512,6 @@ def main():
                     data=output_template_buffer_full,
                     file_name=f'Lendable Limit {date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                )
-                
-                # Tombol Download 4: PDF (DARI TEMPLATE LL LENGKAP)
-                col_down_pdf.download_button(
-                    label="⬇️ Unduh LL Lengkap (.pdf)",
-                    data=output_pdf_buffer,
-                    file_name=f'Lendable Limit {date_str}.pdf',
-                    mime='application/pdf'
                 )
 
                 # Tombol Download 3: LL Eksternal (Save As)
@@ -547,6 +529,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 

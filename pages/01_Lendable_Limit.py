@@ -86,7 +86,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             return None, None, None
 
 
-    # --- BAGIAN 3: Hitung LL ---
+    # --- BAGIAN 3: Hitung LL (TIDAK BERUBAH) ---
     with st.spinner('2/3 - Menghitung Lendable Limit...'):
         try:
             # === Hitung Lendable Limit (LL) ===
@@ -164,7 +164,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             st.error(f"❌ Gagal di Bagian 2: Perhitungan Lendable Limit. Error: {e}")
             return None, None, None
 
-    # --- BAGIAN 4: COPY HASIL KE TEMPLATE ---
+    # --- BAGIAN 4: COPY HASIL KE TEMPLATE LL PENUH (TIDAK BERUBAH) ---
     with st.spinner('3/3 - Menyalin Lendable Limit Result ke Template...'):
         try:
             wb_template = load_workbook(template_file_data)
@@ -189,7 +189,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             number_style_ll.font = default_style_ll.font
             number_style_ll.alignment = default_style_ll.alignment
             number_style_ll.border = default_style_ll.border
-            number_style_ll.number_format = '#,##0'
+            number_style_ll.number_format = '#,##0' # Format ribuan
             if "NumberStyleLL_LLpage" not in wb_template.named_styles: wb_template.add_named_style(number_style_ll)
 
 
@@ -240,71 +240,53 @@ def process_lendable_limit(uploaded_files, template_file_data):
             return None, None, None
 
 # ============================
-# FUNGSI BARU UNTUK APLIKASI STYLE (MEMASTIKAN FORMAT)
+# FUNGSI BARU UNTUK MENGISI TEMPLATE SEDERHANA (TIDAK BERUBAH)
 # ============================
-def apply_simple_ll_styles(df_result, buffer):
-    """Menerapkan style dasar template (font dan number format) ke file sederhana."""
+def fill_simple_ll_template(df_result, template_buffer):
+    """Mengisi template 3-kolom yang sudah memiliki format yang benar."""
     
-    # Buat style baru (Style yang sama dengan NumberStyleLL_LLpage)
-    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    # 1. Load template sederhana
+    wb = load_workbook(template_buffer)
+    ws = wb.active # Asumsi data di sheet pertama
     
-    default_style = NamedStyle(name="SimpleDefaultStyleLL")
-    default_style.font = Font(name='Roboto Condensed', size=9)
-    default_style.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    default_style.border = thin_border
+    start_row = 2 # Asumsi baris 1 adalah header, data mulai dari baris 2
     
-    text_left_style = NamedStyle(name="SimpleTextLeftStyleLL")
-    text_left_style.font = Font(name='Roboto Condensed', size=9)
-    text_left_style.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
-    text_left_style.border = thin_border
-    
-    number_style = NamedStyle(name="SimpleNumberStyleLL")
-    number_style.font = default_style.font
-    number_style.alignment = default_style.alignment
-    number_style.border = default_style.border
-    number_style.number_format = '#,##0' # Format ribuan
-    
-    # Simpan DataFrame ke buffer menggunakan openpyxl
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df_result.to_excel(writer, sheet_name='LL Sederhana', index=False)
-        
-        # Ambil workbook dan worksheet
-        workbook = writer.book
-        worksheet = writer.sheets['LL Sederhana']
-        
-        # Tambahkan NamedStyle ke workbook agar bisa digunakan
-        if "SimpleDefaultStyleLL" not in workbook.named_styles: workbook.add_named_style(default_style)
-        if "SimpleTextLeftStyleLL" not in workbook.named_styles: workbook.add_named_style(text_left_style)
-        if "SimpleNumberStyleLL" not in workbook.named_styles: workbook.add_named_style(number_style)
+    # 2. Hapus data lama (jika ada)
+    if ws.max_row >= start_row:
+        ws.delete_rows(start_row, ws.max_row - start_row + 1)
 
-        # Aplikasikan style ke sel data (baris dimulai dari 2, karena baris 1 adalah header)
-        for row_idx, row in enumerate(worksheet.iter_rows(min_row=2, max_col=3), start=2):
-            # Kolom 1 (A): Stock Code
-            row[0].style = default_style
-            row[0].value = str(row[0].value) if pd.notna(row[0].value) else ""
-            
-            # Kolom 2 (B): Stock Name
-            row[1].style = text_left_style
-            row[1].value = str(row[1].value) if pd.notna(row[1].value) else ""
-            
-            # Kolom 3 (C): Available Lendable Limit (format angka)
-            row[2].style = number_style
-            try:
-                if pd.notna(row[2].value):
-                    row[2].value = int(row[2].value) if row[2].value == int(row[2].value) else float(row[2].value)
-                else:
-                    row[2].value = 0
-            except (ValueError, TypeError):
-                row[2].value = 0
-                
-        # Atur lebar kolom
-        worksheet.column_dimensions['A'].width = 15
-        worksheet.column_dimensions['B'].width = 30
-        worksheet.column_dimensions['C'].width = 25
-        
-    buffer.seek(0)
-    return buffer
+    # 3. Tentukan style dari template baris kedua/ketiga (asumsi sudah diformat)
+    # Ini adalah kunci: kita menyalin style dari sel yang sudah diformat di template.
+    try:
+        style_stock_code = ws.cell(row=2, column=1).style
+        style_stock_name = ws.cell(row=2, column=2).style
+        style_available_ll = ws.cell(row=2, column=3).style
+    except:
+        # Fallback jika template benar-benar kosong atau tidak ada style
+        style_stock_code = None
+        style_stock_name = None
+        style_available_ll = None
 
+    # 4. Tulis data baru
+    for r_idx, row in enumerate(df_result.itertuples(index=False), start=start_row):
+        # Kolom A: Stock Code
+        cell_A = ws.cell(row=r_idx, column=1, value=str(row[0]) if pd.notna(row[0]) else "")
+        if style_stock_code: cell_A.style = style_stock_code
+
+        # Kolom B: Stock Name
+        cell_B = ws.cell(row=r_idx, column=2, value=str(row[1]) if pd.notna(row[1]) else "")
+        if style_stock_name: cell_B.style = style_stock_name
+
+        # Kolom C: Available Lendable Limit (Harus berupa float/int agar format #,##0 bekerja)
+        value_C = int(row[2]) if pd.notna(row[2]) and row[2] == int(row[2]) else (float(row[2]) if pd.notna(row[2]) else 0)
+        cell_C = ws.cell(row=r_idx, column=3, value=value_C)
+        if style_available_ll: cell_C.style = style_available_ll
+        
+    # 5. Simpan ke buffer baru
+    output_buffer = BytesIO()
+    wb.save(output_buffer)
+    output_buffer.seek(0)
+    return output_buffer
 
 # ============================
 # ANTARMUKA LL (MAIN)
@@ -312,7 +294,7 @@ def apply_simple_ll_styles(df_result, buffer):
 
 def main():
     st.title("💸 Lendable Limit (LL) Calculation")
-    st.markdown("Unggah **tiga** file sumber data LL dan **satu** template.")
+    st.markdown("Unggah **tiga** file sumber data LL dan **dua** template.")
 
     required_files = {
         'Instrument.xlsx': '1. File Instrument',
@@ -328,7 +310,12 @@ def main():
             uploaded_files[name] = st.file_uploader(help_text, type=['xlsx'], key=name)
             
     # Input Template (Di baris terpisah)
-    template_file = st.file_uploader('4. File Template Output (Template LL.xlsx)', type=['xlsx'], key='template_ll')
+    col_temp1, col_temp2 = st.columns(2)
+    with col_temp1:
+        template_file_full = st.file_uploader('4. File Template Output LL Lengkap', type=['xlsx'], key='template_ll_full')
+    with col_temp2:
+        # PERUBAHAN: Mengubah nama file template yang diunggah
+        template_file_simple = st.file_uploader('5. File Template Output Lendable Limit Eksternal', type=['xlsx'], key='template_ll_simple')
 
     
     all_files_uploaded = all(f is not None for f in uploaded_files.values())
@@ -336,26 +323,25 @@ def main():
     st.markdown("---")
     st.header("Hasil LL")
     
-    if all_files_uploaded and template_file is not None:
+    # Cek semua 5 file
+    if all_files_uploaded and template_file_full is not None and template_file_simple is not None:
         if st.button("Jalankan Perhitungan LL", type="primary"):
             
-            template_file_data = BytesIO(template_file.getvalue())
+            template_file_data_full = BytesIO(template_file_full.getvalue())
+            template_file_data_simple = BytesIO(template_file_simple.getvalue()) 
 
-            # Menerima df_result_static dari fungsi pemroses
-            output_xlsx_buffer, output_template_buffer, df_result_static = process_lendable_limit(uploaded_files, template_file_data)
+            output_xlsx_buffer, output_template_buffer_full, df_result_static = process_lendable_limit(uploaded_files, template_file_data_full)
             
-            # Menambahkan pengecekan df_result_static
-            if output_xlsx_buffer and output_template_buffer and df_result_static is not None:
+            if output_xlsx_buffer and output_template_buffer_full and df_result_static is not None:
                 date_str = datetime.now().strftime('%Y%m%d')
                 
-                # --- LOGIKA UNTUK DOWNLOAD SEDERHANA DENGAN FORMAT ---
+                # --- LOGIKA UNTUK DOWNLOAD SEDERHANA DENGAN TEMPLATE BARU ---
                 # 1. Pilih hanya 3 kolom yang diminta
                 simple_ll_df = df_result_static[['Stock Code', 'Stock Name', 'Available Lendable Limit']].copy()
                 
-                # 2. Panggil fungsi baru untuk memformat dan mengkonversi ke buffer
-                simple_ll_buffer = BytesIO()
-                simple_ll_buffer = apply_simple_ll_styles(simple_ll_df, simple_ll_buffer)
-                # ---------------------------------------------
+                # 2. Panggil fungsi baru untuk mengisi template sederhana
+                output_template_buffer_simple = fill_simple_ll_template(simple_ll_df, template_file_data_simple)
+                # -----------------------------------------------------------
                 
                 # Menjadi 3 kolom untuk 3 tombol download
                 col_down1, col_down2, col_down3 = st.columns(3)
@@ -368,24 +354,25 @@ def main():
                 )
                 
                 col_down2.download_button(
-                    label="⬇️ Unduh File Template LL Terisi",
-                    data=output_template_buffer,
+                    label="⬇️ Unduh File Template LL Lengkap Terisi",
+                    data=output_template_buffer_full,
                     file_name=f'Lendable Limit {date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
-                # TOMBOL DOWNLOAD BARU (DENGAN FORMAT TEMPLATE)
+                # TOMBOL DOWNLOAD BARU 
                 col_down3.download_button(
-                    label="⬇️ Unduh Stock LL Sederhana (Berformat)",
-                    data=simple_ll_buffer,
-                    file_name=f'Stock_LL_Sederhana_Berformat_{date_str}.xlsx',
+                    label="⬇️ Unduh Lendable Limit Eksternal (Berformat)",
+                    data=output_template_buffer_simple,
+                    # PERUBAHAN: Mengubah nama file output yang diunduh
+                    file_name=f'Lendable Limit Eksternal {date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
             else:
                 st.error("Gagal menghasilkan file. Cek pesan error di atas.")
     else:
-        st.info("Mohon unggah semua 4 file yang diperlukan untuk LL.")
+        st.info("Mohon unggah **semua 5 file** yang diperlukan: 3 file data, 1 template LL Lengkap, dan 1 template Lendable Limit Eksternal.")
 
 if __name__ == '__main__':
     main()

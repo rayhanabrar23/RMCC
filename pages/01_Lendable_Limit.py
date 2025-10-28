@@ -7,7 +7,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font, Alignment, Border, Side, NamedStyle, numbers
 from io import BytesIO
 from datetime import datetime
-import os # Import os untuk operasi folder/file
+import os # Dibiarkan untuk menghindari error impor di fungsi lain jika ada
 import sys
 
 # ============================
@@ -317,33 +317,15 @@ def fill_simple_ll_template(df_result, template_buffer):
     output_buffer.seek(0)
     return output_buffer
 
-# ============================
-# FUNGSI UNTUK MENYIMPAN BUFFER KE LOKAL DISK
-# ============================
-def save_buffer_to_local_disk(buffer, file_name, target_folder):
-    """Menyimpan konten BytesIO buffer ke disk lokal server."""
-    os.makedirs(target_folder, exist_ok=True)
-    target_path = os.path.join(target_folder, file_name)
-    
-    # Simpan buffer ke disk
-    with open(target_path, 'wb') as f:
-        f.write(buffer.getbuffer())
-    
-    st.info(f"💾 File **{file_name}** berhasil disimpan di folder **{target_folder}** (di server/lokal Anda).")
-    
-    # Reset pointer buffer agar bisa diunduh oleh browser
-    buffer.seek(0)
-
 
 # ============================
-# ANTARMUKA LL (MAIN) - DIREVISI UNTUK SEMUA FILE
+# ANTARMUKA LL (MAIN) - HANYA TOMBOL DOWNLOAD (SAVE AS)
 # ============================
 
 def main():
     st.title("💸 Lendable Limit (LL) Calculation")
     st.markdown("Unggah **tiga** file sumber data LL dan **dua** template.")
 
-    # ... (Bagian input file tetap) ...
     required_files = {
         'Instrument.xlsx': '1. File Instrument',
         'Stock Position Detail.xlsx': '2. File Stock Position Detail',
@@ -383,44 +365,14 @@ def main():
                 # --- LOGIKA UNTUK OUTPUT EKSTERNAL SEDERHANA ---
                 simple_ll_df = df_result_static[['Stock Code', 'Stock Name', 'Available Lendable Limit']].copy()
                 output_template_buffer_simple = fill_simple_ll_template(simple_ll_df, template_file_data_simple)
+                # ----------------------------------------------
                 
-                # ====================================================
-                # 🛠️ BAGIAN YANG DIUBAH: SAVING KE FOLDER LOKAL SERVER UNTUK SEMUA FILE
-                # ====================================================
-                TARGET_FOLDER = 'LendableLimit_Output_Harian'
-                st.subheader(f"Penyimpanan File di Server (Folder: {TARGET_FOLDER})")
+                st.subheader("Tombol Unduh (Memicu 'Save As' di Browser Anda)")
                 
-                try:
-                    # 1. Simpan File Konsolidasi
-                    save_buffer_to_local_disk(
-                        output_xlsx_buffer, 
-                        f'{date_str}- LL_Konsolidasi.xlsx', 
-                        TARGET_FOLDER
-                    )
-                    
-                    # 2. Simpan File Template LL Lengkap
-                    save_buffer_to_local_disk(
-                        output_template_buffer_full, 
-                        f'Lendable Limit {date_str}.xlsx', 
-                        TARGET_FOLDER
-                    )
-                    
-                    # 3. Simpan File Lendable Limit Eksternal
-                    save_buffer_to_local_disk(
-                        output_template_buffer_simple, 
-                        f'Lendable Limit Eksternal {date_str}.xlsx', 
-                        TARGET_FOLDER
-                    )
-                    
-                except Exception as e:
-                    st.error(f"❌ Gagal menyimpan file ke folder lokal server: {e}")
-                # ====================================================
-
-                st.subheader("Tombol Unduh (Save As)")
                 # Menjadi 3 kolom untuk 3 tombol download
                 col_down1, col_down2, col_down3 = st.columns(3)
 
-                # Tombol Download 1: Konsolidasi
+                # Tombol Download 1: Konsolidasi -> Memicu Save As
                 col_down1.download_button(
                     label="⬇️ Unduh File Konsolidasi",
                     data=output_xlsx_buffer,
@@ -428,7 +380,7 @@ def main():
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
-                # Tombol Download 2: LL Lengkap
+                # Tombol Download 2: LL Lengkap -> Memicu Save As
                 col_down2.download_button(
                     label="⬇️ Unduh File Template LL Lengkap",
                     data=output_template_buffer_full,
@@ -436,7 +388,7 @@ def main():
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
-                # Tombol Download 3: LL Eksternal
+                # Tombol Download 3: LL Eksternal -> Memicu Save As
                 col_down3.download_button(
                     label="⬇️ Unduh Lendable Limit Eksternal",
                     data=output_template_buffer_simple,

@@ -19,6 +19,17 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
 # ============================
+# ANTARMUKA LL (MAIN)
+# ============================
+
+def main():
+    # Panggil fungsi background di baris pertama main()
+    # PENTING: Pastikan nama file adalah 'background.jpg'
+    set_background_from_local('background.jpg') 
+    
+    st.title("💸 Lendable Limit (LL) Calculation")
+
+# ============================
 # FUNGSI UNTUK BACKGROUND GAMBAR LOKAL
 # ============================
 def get_base64_of_bin_file(bin_file):
@@ -575,4 +586,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 

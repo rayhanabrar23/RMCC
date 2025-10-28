@@ -1,4 +1,4 @@
-# pages/01_Lendable_Limit.py (Halaman LL)
+# pages/01_Lendable_Limit.py
 
 import streamlit as st
 import pandas as pd
@@ -7,11 +7,11 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font, Alignment, Border, Side, NamedStyle, numbers
 from io import BytesIO
 from datetime import datetime
-import os
+import os # Import os untuk operasi folder/file
 import sys
 
 # ============================
-# KONFIGURASI GLOBAL LL
+# KONFIGURASI GLOBAL LL (TIDAK BERUBAH)
 # ============================
 STOCK_CODE_BLACKLIST = ['BEBS', 'IPPE', 'WMPP', 'WMUU']
 SHEET_INST_OLD = 'Instrument'
@@ -31,7 +31,6 @@ FINAL_COLUMNS_LL = [
 # ============================
 # FUNGSI PEMROSESAN LL (TIDAK BERUBAH)
 # ============================
-
 def process_lendable_limit(uploaded_files, template_file_data):
     """Fungsi utama untuk memproses data LL."""
     st.info("🚀 Mulai Pemrosesan Lendable Limit...")
@@ -227,20 +226,20 @@ def process_lendable_limit(uploaded_files, template_file_data):
                         cell.style = default_style_ll
 
 
-            output_template_buffer = BytesIO()
-            wb_template.save(output_template_buffer)
-            output_template_buffer.seek(0)
+            output_template_buffer_full = BytesIO()
+            wb_template.save(output_template_buffer_full)
+            output_template_buffer_full.seek(0)
             
             st.success("✅ Berhasil menyalin data ke template.")
             
-            return output_xlsx_buffer, output_template_buffer, df_result_static
+            return output_xlsx_buffer, output_template_buffer_full, df_result_static
 
         except Exception as e:
             st.error(f"❌ Gagal menyalin dan memformat ke template. Error: {e}")
             return None, None, None
 
 # ============================
-# FUNGSI REVISI UNTUK MENGISI TEMPLATE EKSTERNAL (DENGAN UPDATE TANGGAL B4)
+# FUNGSI UNTUK MENGISI TEMPLATE EKSTERNAL (TIDAK BERUBAH)
 # ============================
 def fill_simple_ll_template(df_result, template_buffer):
     """Mengisi template 3-kolom yang sudah memiliki format yang benar, dimulai dari Row 7, dan mengupdate tanggal di B4."""
@@ -255,10 +254,8 @@ def fill_simple_ll_template(df_result, template_buffer):
 
     # Tambahkan style untuk tanggal jika B4 kosong
     try:
-        # Coba ambil style dari B4 jika sudah ada
         date_style = ws.cell(row=4, column=2).style
     except:
-        # Jika belum ada style, definisikan style default
         date_style = NamedStyle(name="LL_Ext_Date_Default")
         date_style.font = Font(name='Roboto Condensed', size=9, bold=True)
         date_style.alignment = Alignment(horizontal='left', vertical='center')
@@ -321,27 +318,44 @@ def fill_simple_ll_template(df_result, template_buffer):
     return output_buffer
 
 # ============================
-# ANTARMUKA LL (MAIN)
+# FUNGSI UNTUK MENYIMPAN BUFFER KE LOKAL DISK
+# ============================
+def save_buffer_to_local_disk(buffer, file_name, target_folder):
+    """Menyimpan konten BytesIO buffer ke disk lokal server."""
+    os.makedirs(target_folder, exist_ok=True)
+    target_path = os.path.join(target_folder, file_name)
+    
+    # Simpan buffer ke disk
+    with open(target_path, 'wb') as f:
+        f.write(buffer.getbuffer())
+    
+    st.info(f"💾 File **{file_name}** berhasil disimpan di folder **{target_folder}** (di server/lokal Anda).")
+    
+    # Reset pointer buffer agar bisa diunduh oleh browser
+    buffer.seek(0)
+
+
+# ============================
+# ANTARMUKA LL (MAIN) - DIREVISI UNTUK SEMUA FILE
 # ============================
 
 def main():
     st.title("💸 Lendable Limit (LL) Calculation")
     st.markdown("Unggah **tiga** file sumber data LL dan **dua** template.")
 
+    # ... (Bagian input file tetap) ...
     required_files = {
         'Instrument.xlsx': '1. File Instrument',
         'Stock Position Detail.xlsx': '2. File Stock Position Detail',
         'BorrPosition.xlsx': '3. File BorrPosition',
     }
     
-    # Kolom untuk Input Data
     cols = st.columns(len(required_files))
     uploaded_files = {}
     for i, (name, help_text) in enumerate(required_files.items()):
         with cols[i]:
             uploaded_files[name] = st.file_uploader(help_text, type=['xlsx'], key=name)
             
-    # Input Template (Di baris terpisah)
     col_temp1, col_temp2 = st.columns(2)
     with col_temp1:
         template_file_full = st.file_uploader('4. File Template Output LL Lengkap', type=['xlsx'], key='template_ll_full')
@@ -366,34 +380,65 @@ def main():
             if output_xlsx_buffer and output_template_buffer_full and df_result_static is not None:
                 date_str = datetime.now().strftime('%Y%m%d')
                 
-                # --- LOGIKA UNTUK DOWNLOAD SEDERHANA DENGAN TEMPLATE BARU ---
-                # 1. Pilih hanya 3 kolom yang diminta
+                # --- LOGIKA UNTUK OUTPUT EKSTERNAL SEDERHANA ---
                 simple_ll_df = df_result_static[['Stock Code', 'Stock Name', 'Available Lendable Limit']].copy()
-                
-                # 2. Panggil fungsi baru untuk mengisi template sederhana
                 output_template_buffer_simple = fill_simple_ll_template(simple_ll_df, template_file_data_simple)
-                # -----------------------------------------------------------
                 
+                # ====================================================
+                # 🛠️ BAGIAN YANG DIUBAH: SAVING KE FOLDER LOKAL SERVER UNTUK SEMUA FILE
+                # ====================================================
+                TARGET_FOLDER = 'LendableLimit_Output_Harian'
+                st.subheader(f"Penyimpanan File di Server (Folder: {TARGET_FOLDER})")
+                
+                try:
+                    # 1. Simpan File Konsolidasi
+                    save_buffer_to_local_disk(
+                        output_xlsx_buffer, 
+                        f'{date_str}- LL_Konsolidasi.xlsx', 
+                        TARGET_FOLDER
+                    )
+                    
+                    # 2. Simpan File Template LL Lengkap
+                    save_buffer_to_local_disk(
+                        output_template_buffer_full, 
+                        f'Lendable Limit {date_str}.xlsx', 
+                        TARGET_FOLDER
+                    )
+                    
+                    # 3. Simpan File Lendable Limit Eksternal
+                    save_buffer_to_local_disk(
+                        output_template_buffer_simple, 
+                        f'Lendable Limit Eksternal {date_str}.xlsx', 
+                        TARGET_FOLDER
+                    )
+                    
+                except Exception as e:
+                    st.error(f"❌ Gagal menyimpan file ke folder lokal server: {e}")
+                # ====================================================
+
+                st.subheader("Tombol Unduh (Save As)")
                 # Menjadi 3 kolom untuk 3 tombol download
                 col_down1, col_down2, col_down3 = st.columns(3)
 
+                # Tombol Download 1: Konsolidasi
                 col_down1.download_button(
-                    label="⬇️ Unduh File Konsolidasi (Semua Sheet LL)",
+                    label="⬇️ Unduh File Konsolidasi",
                     data=output_xlsx_buffer,
                     file_name=f'{date_str}- LL_Konsolidasi.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
+                # Tombol Download 2: LL Lengkap
                 col_down2.download_button(
-                    label="⬇️ Unduh File Template LL Lengkap Terisi",
+                    label="⬇️ Unduh File Template LL Lengkap",
                     data=output_template_buffer_full,
                     file_name=f'Lendable Limit {date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
-                # TOMBOL DOWNLOAD BARU 
+                # Tombol Download 3: LL Eksternal
                 col_down3.download_button(
-                    label="⬇️ Unduh Lendable Limit Eksternal (Berformat)",
+                    label="⬇️ Unduh Lendable Limit Eksternal",
                     data=output_template_buffer_simple,
                     file_name=f'Lendable Limit_{date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'

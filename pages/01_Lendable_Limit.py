@@ -240,16 +240,33 @@ def process_lendable_limit(uploaded_files, template_file_data):
             return None, None, None
 
 # ============================
-# FUNGSI REVISI UNTUK MENGISI TEMPLATE EKSTERNAL
+# FUNGSI REVISI UNTUK MENGISI TEMPLATE EKSTERNAL (DENGAN UPDATE TANGGAL B4)
 # ============================
 def fill_simple_ll_template(df_result, template_buffer):
-    """Mengisi template 3-kolom yang sudah memiliki format yang benar, dimulai dari Row 7."""
+    """Mengisi template 3-kolom yang sudah memiliki format yang benar, dimulai dari Row 7, dan mengupdate tanggal di B4."""
     
     # 1. Load template sederhana
     wb = load_workbook(template_buffer)
     ws = wb.active 
     
-    # Menetapkan baris awal data berdasarkan permintaan user
+    # PERUBAHAN: Update tanggal di cell B4
+    today_formatted = datetime.now().strftime('%d-%b-%y')
+    ws["B4"] = today_formatted
+
+    # Tambahkan style untuk tanggal jika B4 kosong
+    try:
+        # Coba ambil style dari B4 jika sudah ada
+        date_style = ws.cell(row=4, column=2).style
+    except:
+        # Jika belum ada style, definisikan style default
+        date_style = NamedStyle(name="LL_Ext_Date_Default")
+        date_style.font = Font(name='Roboto Condensed', size=9, bold=True)
+        date_style.alignment = Alignment(horizontal='left', vertical='center')
+        if "LL_Ext_Date_Default" not in wb.named_styles: wb.add_named_style(date_style)
+    
+    ws.cell(row=4, column=2).style = date_style
+
+    # Menetapkan baris awal data
     start_row = 7 
     
     # 2. Hapus data lama (jika ada) - Menghapus dari baris start_row ke bawah
@@ -354,7 +371,6 @@ def main():
                 simple_ll_df = df_result_static[['Stock Code', 'Stock Name', 'Available Lendable Limit']].copy()
                 
                 # 2. Panggil fungsi baru untuk mengisi template sederhana
-                # Menggunakan template_file_data_simple (buffer template kosong) sebagai input
                 output_template_buffer_simple = fill_simple_ll_template(simple_ll_df, template_file_data_simple)
                 # -----------------------------------------------------------
                 

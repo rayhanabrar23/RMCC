@@ -1,5 +1,3 @@
-# pages/01_Lendable_Limit.py
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,11 +5,18 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font, Alignment, Border, Side, NamedStyle, numbers
 from io import BytesIO
 from datetime import datetime
-import os # Dibiarkan untuk menghindari error impor di fungsi lain jika ada
+import os
 import sys
 
+# Import library untuk PDF
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
+
 # ============================
-# KONFIGURASI GLOBAL LL (TIDAK BERUBAH)
+# KONFIGURASI GLOBAL LL
 # ============================
 STOCK_CODE_BLACKLIST = ['BEBS', 'IPPE', 'WMPP', 'WMUU']
 SHEET_INST_OLD = 'Instrument'
@@ -31,6 +36,7 @@ FINAL_COLUMNS_LL = [
 # ============================
 # FUNGSI PEMROSESAN LL (TIDAK BERUBAH)
 # ============================
+
 def process_lendable_limit(uploaded_files, template_file_data):
     """Fungsi utama untuk memproses data LL."""
     st.info("🚀 Mulai Pemrosesan Lendable Limit...")
@@ -163,7 +169,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             st.error(f"❌ Gagal di Bagian 2: Perhitungan Lendable Limit. Error: {e}")
             return None, None, None
 
-    # --- BAGIAN 4: COPY HASIL KE TEMPLATE LL PENUH (TIDAK BERUBAH) ---
+    # --- BAGIAN 4: COPY HASIL KE TEMPLATE LL PENUH (DENGAN UPDATE TANGGAL B4) ---
     with st.spinner('3/3 - Menyalin Lendable Limit Result ke Template...'):
         try:
             wb_template = load_workbook(template_file_data)
@@ -239,7 +245,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             return None, None, None
 
 # ============================
-# FUNGSI UNTUK MENGISI TEMPLATE EKSTERNAL (TIDAK BERUBAH)
+# FUNGSI REVISI UNTUK MENGISI TEMPLATE EKSTERNAL (DENGAN UPDATE TANGGAL B4)
 # ============================
 def fill_simple_ll_template(df_result, template_buffer):
     """Mengisi template 3-kolom yang sudah memiliki format yang benar, dimulai dari Row 7, dan mengupdate tanggal di B4."""
@@ -254,8 +260,10 @@ def fill_simple_ll_template(df_result, template_buffer):
 
     # Tambahkan style untuk tanggal jika B4 kosong
     try:
+        # Coba ambil style dari B4 jika sudah ada
         date_style = ws.cell(row=4, column=2).style
     except:
+        # Jika belum ada style, definisikan style default
         date_style = NamedStyle(name="LL_Ext_Date_Default")
         date_style.font = Font(name='Roboto Condensed', size=9, bold=True)
         date_style.alignment = Alignment(horizontal='left', vertical='center')
@@ -317,9 +325,59 @@ def fill_simple_ll_template(df_result, template_buffer):
     output_buffer.seek(0)
     return output_buffer
 
+# ============================
+# FUNGSI TAMBAHAN UNTUK KONVERSI KE PDF
+# ============================
+def convert_df_to_pdf(df_result):
+    """Mengubah DataFrame menjadi buffer PDF (menggunakan reportlab)."""
+    
+    pdf_buffer = BytesIO()
+    
+    # Siapkan data dari DataFrame
+    data_list = [['Stock Code', 'Stock Name', 'Available Lendable Limit']] 
+    # Pastikan data berupa string untuk rendering PDF yang konsisten
+    for row in df_result.itertuples(index=False):
+        # Format angka Lendable Limit
+        ll_formatted = f'{row[2]:,.0f}'
+        data_list.append([str(row[0]), str(row[1]), ll_formatted])
+
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    
+    elements = []
+    
+    # Tambahkan judul dan tanggal
+    elements.append(Paragraph(f"Lendable Limit Saham Jaminan PEI", styles['Title']))
+    today_formatted = datetime.now().strftime('%d %B %Y')
+    elements.append(Paragraph(f"Tanggal: {today_formatted}", styles['Normal']))
+    elements.append(Paragraph("<br/>", styles['Normal'])) # Spasi
+
+    # Buat tabel
+    table = Table(data_list, colWidths=[1.5 * 72, 3 * 72, 2 * 72]) # Atur lebar kolom
+    
+    # Style Tabel
+    table_style = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F2F2F2')), # Header background
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (1, 1), (1, -1), 'LEFT'), # Stock Name rata kiri
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+    ])
+    table.setStyle(table_style)
+    
+    elements.append(table)
+    
+    doc.build(elements)
+    
+    pdf_buffer.seek(0)
+    return pdf_buffer
+
 
 # ============================
-# ANTARMUKA LL (MAIN) - HANYA TOMBOL DOWNLOAD (SAVE AS)
+# ANTARMUKA LL (MAIN)
 # ============================
 
 def main():
@@ -332,12 +390,14 @@ def main():
         'BorrPosition.xlsx': '3. File BorrPosition',
     }
     
+    # Kolom untuk Input Data
     cols = st.columns(len(required_files))
     uploaded_files = {}
     for i, (name, help_text) in enumerate(required_files.items()):
         with cols[i]:
             uploaded_files[name] = st.file_uploader(help_text, type=['xlsx'], key=name)
             
+    # Input Template (Di baris terpisah)
     col_temp1, col_temp2 = st.columns(2)
     with col_temp1:
         template_file_full = st.file_uploader('4. File Template Output LL Lengkap', type=['xlsx'], key='template_ll_full')
@@ -365,35 +425,46 @@ def main():
                 # --- LOGIKA UNTUK OUTPUT EKSTERNAL SEDERHANA ---
                 simple_ll_df = df_result_static[['Stock Code', 'Stock Name', 'Available Lendable Limit']].copy()
                 output_template_buffer_simple = fill_simple_ll_template(simple_ll_df, template_file_data_simple)
-                # ----------------------------------------------
                 
+                # --- LOGIKA UNTUK PDF ---
+                output_pdf_buffer = convert_df_to_pdf(simple_ll_df)
+                # -----------------------------
+
                 st.subheader("Tombol Unduh (Memicu 'Save As' di Browser Anda)")
                 
-                # Menjadi 3 kolom untuk 3 tombol download
-                col_down1, col_down2, col_down3 = st.columns(3)
+                # Menjadi 4 kolom untuk 4 tombol download
+                col_down1, col_down2, col_down3, col_down4 = st.columns(4)
 
-                # Tombol Download 1: Konsolidasi -> Memicu Save As
+                # Tombol Download 1: Konsolidasi (Save As)
                 col_down1.download_button(
-                    label="⬇️ Unduh File Konsolidasi",
+                    label="⬇️ Unduh Konsolidasi (.xlsx)",
                     data=output_xlsx_buffer,
                     file_name=f'{date_str}- LL_Konsolidasi.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
-                # Tombol Download 2: LL Lengkap -> Memicu Save As
+                # Tombol Download 2: LL Lengkap (Save As)
                 col_down2.download_button(
-                    label="⬇️ Unduh File Template LL Lengkap",
+                    label="⬇️ Unduh LL Lengkap (.xlsx)",
                     data=output_template_buffer_full,
                     file_name=f'Lendable Limit {date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
-                # Tombol Download 3: LL Eksternal -> Memicu Save As
+                # Tombol Download 3: LL Eksternal (Save As)
                 col_down3.download_button(
-                    label="⬇️ Unduh Lendable Limit Eksternal",
+                    label="⬇️ Unduh LL Eksternal (.xlsx)",
                     data=output_template_buffer_simple,
-                    file_name=f'Lendable Limit_{date_str}.xlsx',
+                    file_name=f'Lendable Limit Eksternal {date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+                
+                # Tombol Download 4: PDF (Membuat opsi PDF di Save As)
+                col_down4.download_button(
+                    label="⬇️ Unduh LL Eksternal (.pdf)",
+                    data=output_pdf_buffer,
+                    file_name=f'Lendable Limit Eksternal {date_str}.pdf',
+                    mime='application/pdf'
                 )
                 
             else:

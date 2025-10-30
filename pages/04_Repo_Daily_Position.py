@@ -29,27 +29,24 @@ START_COL_EXCEL = 1 # Kolom A di Excel (indeks kolom openpyxl)
 def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) -> pd.DataFrame:
     st.info(f"Melakukan VLOOKUP/Merge data: '{REPO_KEY_COL}' (Repo) -> '{PHEI_KEY_COL}' (PHEI)...")
     
-    # --- PEMBERSIHAN KUNCI AGRESIF ---
     st.warning("Membersihkan kolom kunci (mengubah ke string, menghapus spasi, upper-case)...")
     
-    # 1. Bersihkan Kunci di File REPO
+    # Kunci di File REPO
     if REPO_KEY_COL in df_repo_main.columns:
         df_repo_main[REPO_KEY_COL] = df_repo_main[REPO_KEY_COL].astype(str).str.strip().str.upper()
     
-    # 2. Bersihkan Kunci di File PHEI
+    # Kunci di File PHEI
     if PHEI_KEY_COL in df_phei_lookup.columns:
         df_phei_lookup[PHEI_KEY_COL] = df_phei_lookup[PHEI_KEY_COL].astype(str).str.strip().str.upper()
     
     # --- DIAGNOSA: Tampilkan data kunci Repo yang sudah dibersihkan ---
     st.subheader("Data Kunci Repo yang Digunakan (CEK KECOCOKAN DENGAN FILE PHEI):")
     st.dataframe(df_repo_main[[REPO_KEY_COL, NOMINAL_AMOUNT_COL]].head())
-    st.caption(f"Pastikan nilai di kolom '{REPO_KEY_COL}' ini **sama persis** dengan kode di File PHEI Anda, atau *lookup* akan menghasilkan 0.00% match.")
+    st.caption(f"Jika nilai di kolom '{REPO_KEY_COL}' di atas tidak cocok dengan kode di File PHEI Anda, LAKUKAN PERBAIKAN PADA FILE REPO.")
     # -----------------------------------------------------------------
 
-    # Persiapan File PHEI
     df_phei_lookup = df_phei_lookup.dropna(subset=[PHEI_KEY_COL, PHEI_VALUE_COL]).copy()
     
-    # Merge (simulasi VLOOKUP)
     df_merged = pd.merge(
         df_repo_main,
         df_phei_lookup[[PHEI_KEY_COL, PHEI_VALUE_COL]],
@@ -62,14 +59,12 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
          df_merged.drop(columns=[PHEI_KEY_COL], inplace=True)
     
     if PHEI_VALUE_COL in df_merged.columns:
-        # Pengecekan Statistik setelah cleaning
         initial_match_count = df_merged[PHEI_VALUE_COL].count()
         total_rows = len(df_merged)
         st.write(f"📊 **Statistik Lookup Akhir:** {initial_match_count} dari {total_rows} baris ({initial_match_count/total_rows:.2%}) berhasil dicocokkan.")
 
         df_merged[PHEI_VALUE_COL] = pd.to_numeric(df_merged[PHEI_VALUE_COL], errors='coerce') 
         
-        # Perhitungan: Update kolom 'Fair Price PHEI' di template
         if 'Fair Price PHEI' in df_merged.columns:
              df_merged['Fair Price PHEI'] = df_merged[PHEI_VALUE_COL] / 1000000000000 
         else:
@@ -124,7 +119,6 @@ def main():
                 for enc in encodings_to_try:
                     try:
                         file_buffer = BytesIO(phei_lookup_file.getvalue())
-                        # Menggunakan encoding yang lebih kuat untuk mengatasi header
                         df_phei_lookup = pd.read_csv(file_buffer, delimiter=',', encoding=enc)
                         break 
                     except Exception:
@@ -173,7 +167,6 @@ def main():
                         
                         final_value = cell_value if pd.notna(cell_value) else None 
                         
-                        # Tulis nilai ke sel
                         sheet.cell(row=row_number, column=col_number, value=final_value)
 
                 st.success(f"Data harian (termasuk Fair Price PHEI terbaru) berhasil ditimpa ke dalam template Excel.")

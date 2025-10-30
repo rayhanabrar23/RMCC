@@ -1,4 +1,4 @@
-# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - Hapus AttributeError)
+# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - FIX ENCODING)
 
 import streamlit as st
 import pandas as pd
@@ -108,8 +108,8 @@ def main():
             # KODE REVISI UNTUK MEMBACA FILE LOOKUP PHEI DENGAN PEMISAH KOMA
             # -----------------------------------------------------------------
             if phei_lookup_file.name.endswith('.csv'):
-                # Gunakan pd.read_csv dengan delimiter=',' sesuai proses Text-to-Column Anda
-                df_phei_lookup = pd.read_csv(phei_lookup_file, delimiter=',')
+                # FIX ENCODING: Tambahkan parameter encoding='latin1'
+                df_phei_lookup = pd.read_csv(phei_lookup_file, delimiter=',', encoding='latin1')
                 
             else:
                 df_phei_lookup = pd.read_excel(phei_lookup_file, engine='openpyxl')
@@ -159,8 +159,7 @@ def main():
 
         except Exception as e:
             st.error(f"Terjadi kesalahan saat membaca atau memproses file. Error: {e}")
-            st.warning("Pastikan file PHEI Anda benar-benar menggunakan koma (,) sebagai pemisah kolom.")
+            st.warning("Jika error ini muncul lagi, coba ganti `encoding='latin1'` menjadi `encoding='cp1252'` di kode Anda.")
 
 if __name__ == '__main__':
-    # Hapus if st._is_running_with_streamlit: yang menyebabkan AttributeError
     main()

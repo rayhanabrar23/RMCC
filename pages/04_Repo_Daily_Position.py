@@ -1,4 +1,4 @@
-# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - FIX NameError)
+# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - MEMAKAI OUTPUT KEMARIN SEBAGAI TEMPLATE)
 
 import streamlit as st
 import pandas as pd
@@ -8,7 +8,7 @@ from io import BytesIO
 from datetime import datetime
 
 # ============================
-# KONSTANTA (WAJIB DIDEFINISIKAN)
+# KONSTANTA (TETAP SAMA)
 # ============================
 REPO_KEY_COL = 'Instrument Code' 
 PHEI_KEY_COL = 'ISIN CODE' 
@@ -20,17 +20,12 @@ START_ROW_EXCEL = 12 # Baris A12 di Excel
 START_COL_EXCEL = 1 # Kolom A di Excel
 # ============================
 
-# ============================
-# FUNGSI PENGOLAHAN DATA
-# ============================
-
+# ... (Fungsi process_repo_data tetap sama) ...
 def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) -> pd.DataFrame:
     st.info(f"Melakukan VLOOKUP/Merge data: '{REPO_KEY_COL}' (Repo) -> '{PHEI_KEY_COL}' (PHEI)...")
     
-    # Persiapan File PHEI
     df_phei_lookup = df_phei_lookup.dropna(subset=[PHEI_KEY_COL, PHEI_VALUE_COL]).copy()
     
-    # Merge (simulasi VLOOKUP)
     df_merged = pd.merge(
         df_repo_main,
         df_phei_lookup[[PHEI_KEY_COL, PHEI_VALUE_COL]],
@@ -39,28 +34,23 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
         how='left'
     )
     
-    # Hapus kolom kunci duplikat
     if PHEI_KEY_COL in df_merged.columns:
          df_merged.drop(columns=[PHEI_KEY_COL], inplace=True)
     
-    # Logika Perhitungan
     if PHEI_VALUE_COL in df_merged.columns:
         initial_match_count = df_merged[PHEI_VALUE_COL].count()
         total_rows = len(df_merged)
         st.write(f"📊 **Statistik Lookup Awal:** {initial_match_count} dari {total_rows} baris ({initial_match_count/total_rows:.2%}) berhasil dicocokkan.")
 
-        df_merged[PHEI_VALUE_COL] = pd.to_numeric(df_merged[PHEI_VALUE_COL], errors='coerce') # <-- Sudah diperbaiki di sini
+        df_merged[PHEI_VALUE_COL] = pd.to_numeric(df_merged[PHEI_VALUE_COL], errors='coerce') 
         
-        # Ganti nama kolom Fair Price PHEI yang asli dengan hasil lookup
-        # Pastikan kolom 'Fair Price PHEI' ada di df_repo_main agar bisa ditimpa
-        # Jika 'Fair Price PHEI' adalah kolom J (indeks 9)
+        # Perhitungan: Update kolom 'Fair Price PHEI' yang sudah ada di template
         if 'Fair Price PHEI' in df_merged.columns:
-             # FIX TYPO DI BARIS INI: Menggunakan PHEI_VALUE_COL (sebelumnya PPEI_VALUE_COL)
              df_merged['Fair Price PHEI'] = df_merged[PHEI_VALUE_COL] / 1000000000000 
         else:
              df_merged[PHEI_VALUE_COL] = df_merged[PHEI_VALUE_COL] / 1000000000000
         
-        st.success(f"'{PHEI_VALUE_COL}' berhasil dihitung dan dibagi 1T.")
+        st.success(f"'{PHEI_VALUE_COL}' berhasil dihitung dan dibagi 1T. Nilai Fair Price PHEI (Kolom J) telah diperbarui.")
     
     return df_merged
 # ... (Akhir fungsi process_repo_data) ...
@@ -72,22 +62,23 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
 
 def main():
     st.title("🔄 Otomatisasi Repo Daily Position")
-    st.markdown("Unggah file data utama dan file *lookup* harian PHEI untuk menggantikan `VLOOKUP`.")
+    st.markdown("Alur Kerja: **Output Kemarin** (File 1) + **Data PHEI Hari Ini** (File 2) = **Output Hari Ini**.")
 
     col1, col2 = st.columns(2)
 
     with col1:
         repo_file_upload = st.file_uploader(
-            '1. Unggah File Repo Position Template (.xlsx)', 
+            '1. 📂 Unggah File Repo Template (Gunakan **Output Hari Sebelumnya**)', 
             type=['xlsx'], 
-            key='Reverse Repo Bonds Daily Position'
+            key='Reverse Repo Bonds Daily Position',
+            help="Ini adalah file Excel (.xlsx) dari tanggal kemarin. Seluruh data dari A12 ke bawah akan ditimpa."
         )
     with col2:
         phei_lookup_file = st.file_uploader(
-            '2. Unggah File Lookup Harian PHEI (CSV/Excel)', 
+            '2. 📈 Unggah File Lookup Harian PHEI (Data Hari Ini)', 
             type=['xlsx', 'csv'], 
             key='20251027_SeriesAll_PEI',
-            help="File PHEI berisi ISIN CODE dan TODAY FAIR PRICE yang dipisahkan oleh koma."
+            help="File PHEI berisi ISIN CODE dan TODAY FAIR PRICE terbaru."
         )
     
     st.markdown("---")
@@ -99,7 +90,8 @@ def main():
             # 1. Baca data dari template (untuk diproses)
             df_repo_main = pd.read_excel(repo_file_buffer, header=10) 
             df_repo_main.columns = df_repo_main.columns.str.replace('\n', ' ').str.strip()
-            original_repo_cols = df_repo_main.columns.tolist()
+            # Kolom template yang akan kita timpa (A hingga kolom terakhir yang terdeteksi)
+            original_repo_cols = df_repo_main.columns.tolist() 
 
             # -----------------------------------------------------------------
             # KODE REVISI UNTUK MEMBACA FILE LOOKUP PHEI (HARDENED)
@@ -131,7 +123,6 @@ def main():
             
             if PHEI_VALUE_COL not in df_phei_lookup.columns or PHEI_KEY_COL not in df_phei_lookup.columns:
                 st.error(f"Kolom kunci **'{PHEI_KEY_COL}'** atau nilai **'{PHEI_VALUE_COL}'** TIDAK DITEMUKAN di file lookup PHEI.")
-                st.info("Kolom yang ditemukan di File PHEI: " + str(df_phei_lookup.columns.tolist()))
                 return
             
             
@@ -142,6 +133,7 @@ def main():
                 df_result_raw = process_repo_data(df_repo_main, df_phei_lookup)
                 
                 # --- MEMPERSIAPKAN DATA UNTUK DITIMPA ---
+                # Mengambil kolom data yang sesuai dengan urutan template (A hingga O/N)
                 df_to_write = df_result_raw[original_repo_cols].copy() 
 
                 # 3. Muat Workbook Openpyxl dari template
@@ -163,7 +155,7 @@ def main():
                         # Tulis nilai ke sel
                         sheet.cell(row=row_number, column=col_number, value=final_value)
 
-                st.success(f"Data hasil lookup dan perhitungan berhasil ditimpa ke dalam template Excel, mulai dari sel A{START_ROW_EXCEL} ke bawah.")
+                st.success(f"Data harian (termasuk Fair Price PHEI terbaru) berhasil ditimpa ke dalam template Excel.")
                 
                 # 5. Siapkan file untuk di-download
                 output_buffer = BytesIO()
@@ -173,9 +165,9 @@ def main():
                 date_str = datetime.now().strftime('%Y%m%d')
 
                 st.download_button(
-                    label="⬇️ Unduh File Template Repo (.xlsx) - Data Updated",
+                    label="⬇️ Unduh File Template Repo Hari Ini (.xlsx)",
                     data=output_buffer,
-                    file_name=f'Repo_Daily_Position_Template_Updated_{date_str}.xlsx',
+                    file_name=f'Repo_Daily_Position_Tgl{date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
@@ -184,7 +176,7 @@ def main():
 
         except Exception as e:
             st.error(f"Terjadi kesalahan saat membaca atau memproses file. Error: {e}")
-            st.warning("Pastikan kolom kunci di File Repo ('Instrument Code') dan File PHEI ('ISIN CODE') sudah bersih dari spasi dan karater aneh.")
+            st.warning("Pastikan Anda mengunggah file Repo output kemarin sebagai File 1 dan File PHEI terbaru sebagai File 2.")
 
 if __name__ == '__main__':
     main()

@@ -1,4 +1,4 @@
-# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - FIX ENCODING)
+# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - FIX HEADER EXCEL)
 
 import streamlit as st
 import pandas as pd
@@ -39,7 +39,6 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
     df_phei_lookup = df_phei_lookup.dropna(subset=[PHEI_KEY_COL, PHEI_VALUE_COL]).copy()
     
     # 2. Lakukan Merge (simulasi VLOOKUP)
-    # Gunakan parameter 'left_on' dan 'right_on' untuk merge dua kolom yang berbeda
     df_merged = pd.merge(
         df_repo_main,
         df_phei_lookup[[PHEI_KEY_COL, PHEI_VALUE_COL]],
@@ -101,14 +100,15 @@ def main():
 
     if repo_file and phei_lookup_file:
         try:
-            # Baca file utama
-            df_repo_main = pd.read_excel(repo_file, engine='openpyxl')
+            # Baca file utama (Reverse Repo Bonds Daily Position Template)
+            # FIX HEADER: Header di baris 11 (indeks 10)
+            df_repo_main = pd.read_excel(repo_file, engine='openpyxl', header=10) 
             
             # -----------------------------------------------------------------
-            # KODE REVISI UNTUK MEMBACA FILE LOOKUP PHEI DENGAN PEMISAH KOMA
+            # KODE REVISI UNTUK MEMBACA FILE LOOKUP PHEI
             # -----------------------------------------------------------------
             if phei_lookup_file.name.endswith('.csv'):
-                # FIX ENCODING: Tambahkan parameter encoding='latin1'
+                # FIX ENCODING: encoding='latin1' untuk file CSV/TXT
                 df_phei_lookup = pd.read_csv(phei_lookup_file, delimiter=',', encoding='latin1')
                 
             else:
@@ -120,7 +120,10 @@ def main():
             
             # --- VALIDASI KOLOM FILE UTAMA ---
             if REPO_KEY_COL not in df_repo_main.columns or NOMINAL_AMOUNT_COL not in df_repo_main.columns:
+                 # Ini adalah baris yang menghasilkan error Anda, jika error muncul lagi,
+                 # kemungkinan nama kolom di Excel Anda ada spasi di akhir ('Instrument Code ')
                  st.error(f"Kolom kunci ('{REPO_KEY_COL}' atau '{NOMINAL_AMOUNT_COL}') tidak ditemukan di File Repo Position Template. Harap cek header file Anda.")
+                 st.info("Kolom yang ditemukan di File Repo: " + str(df_repo_main.columns.tolist()))
                  return
 
             df_repo_main = df_repo_main.dropna(subset=[REPO_KEY_COL, NOMINAL_AMOUNT_COL]).copy()
@@ -159,7 +162,7 @@ def main():
 
         except Exception as e:
             st.error(f"Terjadi kesalahan saat membaca atau memproses file. Error: {e}")
-            st.warning("Jika error ini muncul lagi, coba ganti `encoding='latin1'` menjadi `encoding='cp1252'` di kode Anda.")
+            st.warning("Jika error ini muncul lagi, coba pastikan file Excel Repo tidak memiliki sel gabungan di sekitar baris header.")
 
 if __name__ == '__main__':
     main()

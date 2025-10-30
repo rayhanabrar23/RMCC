@@ -1,4 +1,4 @@
-# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - FIX HEADER EXCEL)
+# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - FIX HEADER EXCEL CLEANING)
 
 import streamlit as st
 import pandas as pd
@@ -14,6 +14,7 @@ import sys
 # KONSTANTA (WAJIB DIDEFINISIKAN)
 # ============================
 # Kunci di file UTAMA (Reverse Repo Bonds Daily Position) - Kolom E12
+# PERHATIAN: Ini adalah nama kolom yang BERSIH, BUKAN yang ada \n nya
 REPO_KEY_COL = 'Instrument Code' 
 # Kunci di file PHEI (20251028_SeriesAll_PEI) - Kolom C setelah Text-to-Column
 PHEI_KEY_COL = 'ISIN CODE' 
@@ -104,6 +105,11 @@ def main():
             # FIX HEADER: Header di baris 11 (indeks 10)
             df_repo_main = pd.read_excel(repo_file, engine='openpyxl', header=10) 
             
+            # --- FIX 1: Membersihkan header file Repo ---
+            # Menghapus karakter newline (\n) dan strip spasi
+            df_repo_main.columns = df_repo_main.columns.str.replace('\n', ' ').str.strip()
+            # -------------------------------------------
+
             # -----------------------------------------------------------------
             # KODE REVISI UNTUK MEMBACA FILE LOOKUP PHEI
             # -----------------------------------------------------------------
@@ -118,11 +124,9 @@ def main():
             df_phei_lookup.columns = df_phei_lookup.columns.str.strip() 
             # -----------------------------------------------------------------
             
-            # --- VALIDASI KOLOM FILE UTAMA ---
+            # --- VALIDASI KOLOM FILE UTAMA (Sekarang harusnya berhasil) ---
             if REPO_KEY_COL not in df_repo_main.columns or NOMINAL_AMOUNT_COL not in df_repo_main.columns:
-                 # Ini adalah baris yang menghasilkan error Anda, jika error muncul lagi,
-                 # kemungkinan nama kolom di Excel Anda ada spasi di akhir ('Instrument Code ')
-                 st.error(f"Kolom kunci ('{REPO_KEY_COL}' atau '{NOMINAL_AMOUNT_COL}') tidak ditemukan di File Repo Position Template. Harap cek header file Anda.")
+                 st.error(f"Kolom kunci ('{REPO_KEY_COL}' atau '{NOMINAL_AMOUNT_COL}') TIDAK DITEMUKAN meskipun sudah dibersihkan. Cek kembali nama kolom di Excel Anda.")
                  st.info("Kolom yang ditemukan di File Repo: " + str(df_repo_main.columns.tolist()))
                  return
 
@@ -162,7 +166,7 @@ def main():
 
         except Exception as e:
             st.error(f"Terjadi kesalahan saat membaca atau memproses file. Error: {e}")
-            st.warning("Jika error ini muncul lagi, coba pastikan file Excel Repo tidak memiliki sel gabungan di sekitar baris header.")
+            st.warning("Pastikan Anda mengunggah file yang benar dan header berada di baris ke-11.")
 
 if __name__ == '__main__':
     main()

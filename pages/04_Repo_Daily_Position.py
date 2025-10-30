@@ -1,4 +1,4 @@
-# pages/04_Repo_Daily_Position.py (FINAL FULL CODE)
+# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - Hapus AttributeError)
 
 import streamlit as st
 import pandas as pd
@@ -69,7 +69,6 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
 def format_output(df_result_raw: pd.DataFrame) -> pd.DataFrame:
     """
     Melakukan formatting akhir pada DataFrame sebelum ditampilkan/didownload.
-    (Saat ini hanya mengembalikan data mentah)
     """
     st.info("Melakukan formatting hasil akhir...")
     return df_result_raw.copy()
@@ -163,7 +162,5 @@ def main():
             st.warning("Pastikan file PHEI Anda benar-benar menggunakan koma (,) sebagai pemisah kolom.")
 
 if __name__ == '__main__':
-    if st._is_running_with_streamlit:
-        main()
-    else:
-        pass
+    # Hapus if st._is_running_with_streamlit: yang menyebabkan AttributeError
+    main()

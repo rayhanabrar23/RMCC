@@ -90,7 +90,7 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
 
 def main():
     st.title("🔄 Otomatisasi Repo Daily Position")
-    st.markdown("Fokus: **Mengisi Kolom J (Fair Price PHEI) mulai dari Baris 12 ke bawah.**")
+    st.markdown("Fokus: **Mengisi Kolom J (Fair Price PHEI) mulai dari Baris 12 ke bawah & Update Tanggal (B2).**")
 
     col1, col2 = st.columns(2)
 
@@ -120,9 +120,7 @@ def main():
             df_repo_main.columns = df_repo_main.columns.str.replace('\n', ' ').str.strip()
             original_repo_cols = df_repo_main.columns.tolist() 
 
-            # -----------------------------------------------------------------
-            # KODE REVISI UNTUK MEMBACA FILE LOOKUP PHEI (Final)
-            # -----------------------------------------------------------------
+            # --- PEMBACAAN PHEI (Sama) ---
             if phei_lookup_file.name.endswith('.csv'):
                 encodings_to_try = ['latin1', 'cp1252', 'ISO-8859-1', 'utf-8']
                 df_phei_lookup = None
@@ -130,14 +128,11 @@ def main():
                 for enc in encodings_to_try:
                     try:
                         file_buffer = BytesIO(phei_lookup_file.getvalue())
-                        # Baca tanpa header, pisahkan koma, lalu gunakan baris pertama sebagai header
                         df_phei_lookup_raw = pd.read_csv(file_buffer, delimiter=',', encoding=enc, header=None)
-                        
-                        # Set header menggunakan baris pertama (indeks 0)
                         df_phei_lookup_raw.columns = df_phei_lookup_raw.iloc[0]
                         df_phei_lookup = df_phei_lookup_raw[1:].copy() 
                         break 
-                    except Exception as e:
+                    except Exception:
                         continue
                 if df_phei_lookup is None:
                     raise Exception("Gagal membaca file CSV PHEI.")
@@ -145,7 +140,7 @@ def main():
                 df_phei_lookup = pd.read_excel(phei_lookup_file)
             
             df_phei_lookup.columns = df_phei_lookup.columns.str.strip() 
-            # -----------------------------------------------------------------
+            # -----------------------------
 
             # --- VALIDASI & PREP ---
             if REPO_KEY_COL not in df_repo_main.columns or NOMINAL_AMOUNT_COL not in df_repo_main.columns:
@@ -174,6 +169,7 @@ def main():
                 wb = load_workbook(repo_file_buffer)
                 sheet = wb.active 
                 
+                # Mendapatkan indeks kolom 'Fair Price PHEI' (Kolom J)
                 try:
                     fair_price_col_index = original_repo_cols.index('Fair Price PHEI') + 1 
                 except ValueError:
@@ -192,6 +188,19 @@ def main():
 
                 st.success(f"✅ Data Fair Price PHEI (Kolom J) berhasil ditimpa ke dalam template Excel.")
                 
+                # --- TAMBAHAN OTOMASI TANGGAL DI B2 ---
+                today_date = datetime.now()
+                # Format tanggal contoh: "30 Okt 2025"
+                date_str_formatted = today_date.strftime('%d %b %Y') 
+                
+                # String final untuk Sel B2: "Daily As of Date : 30 Okt 2025 - 30 Okt 2025"
+                b2_value = f"Daily As of Date : {date_str_formatted} - {date_str_formatted}"
+                
+                # Tulis nilai ke Sel B2 (Baris 2, Kolom B/2)
+                sheet.cell(row=2, column=2, value=b2_value)
+                st.info(f"📅 Sel B2 (Tanggal) berhasil diperbarui menjadi: **{b2_value}**.")
+                # ------------------------------------
+
                 # 5. Siapkan file untuk di-download
                 output_buffer = BytesIO()
                 wb.save(output_buffer)
@@ -207,7 +216,6 @@ def main():
                 )
                 
                 st.subheader("Hasil Dataframe (Verifikasi Data Kolom J)")
-                # Tampilkan juga kolom mentah PHEI untuk debug skala
                 st.dataframe(df_result_raw[['Instrument Code', 'RAW_PHEI_VALUE', 'Fair Price PHEI']])
 
         except Exception as e:

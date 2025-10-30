@@ -1,4 +1,4 @@
-# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - MEMAKAI OUTPUT KEMARIN SEBAGAI TEMPLATE)
+# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - FIX LOOKUP 0%)
 
 import streamlit as st
 import pandas as pd
@@ -16,16 +16,33 @@ NOMINAL_AMOUNT_COL = 'Nominal Amount'
 PHEI_VALUE_COL = 'TODAY FAIR PRICE' 
 
 # BARIS DAN KOLOM TEMPLATE TARGET
-START_ROW_EXCEL = 12 # Baris A12 di Excel
-START_COL_EXCEL = 1 # Kolom A di Excel
+START_ROW_EXCEL = 12 
+START_COL_EXCEL = 1 
 # ============================
 
-# ... (Fungsi process_repo_data tetap sama) ...
+# ============================
+# FUNGSI PENGOLAHAN DATA
+# ============================
+
 def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) -> pd.DataFrame:
     st.info(f"Melakukan VLOOKUP/Merge data: '{REPO_KEY_COL}' (Repo) -> '{PHEI_KEY_COL}' (PHEI)...")
     
+    # --- LANGKAH PENTING: PEMBERSIHAN KUNCI (KEY CLEANING) ---
+    st.warning("Membersihkan kolom kunci (mengubah ke string, menghapus spasi, upper-case)...")
+    
+    # 1. Bersihkan Kunci di File REPO
+    if REPO_KEY_COL in df_repo_main.columns:
+        df_repo_main[REPO_KEY_COL] = df_repo_main[REPO_KEY_COL].astype(str).str.strip().str.upper()
+    
+    # 2. Bersihkan Kunci di File PHEI
+    if PHEI_KEY_COL in df_phei_lookup.columns:
+        df_phei_lookup[PHEI_KEY_COL] = df_phei_lookup[PHEI_KEY_COL].astype(str).str.strip().str.upper()
+    # ----------------------------------------------------------
+
+    # Persiapan File PHEI
     df_phei_lookup = df_phei_lookup.dropna(subset=[PHEI_KEY_COL, PHEI_VALUE_COL]).copy()
     
+    # Merge (simulasi VLOOKUP)
     df_merged = pd.merge(
         df_repo_main,
         df_phei_lookup[[PHEI_KEY_COL, PHEI_VALUE_COL]],
@@ -38,13 +55,13 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
          df_merged.drop(columns=[PHEI_KEY_COL], inplace=True)
     
     if PHEI_VALUE_COL in df_merged.columns:
+        # Pengecekan Statistik setelah cleaning
         initial_match_count = df_merged[PHEI_VALUE_COL].count()
         total_rows = len(df_merged)
-        st.write(f"📊 **Statistik Lookup Awal:** {initial_match_count} dari {total_rows} baris ({initial_match_count/total_rows:.2%}) berhasil dicocokkan.")
+        st.write(f"📊 **Statistik Lookup Akhir:** {initial_match_count} dari {total_rows} baris ({initial_match_count/total_rows:.2%}) berhasil dicocokkan.")
 
         df_merged[PHEI_VALUE_COL] = pd.to_numeric(df_merged[PHEI_VALUE_COL], errors='coerce') 
         
-        # Perhitungan: Update kolom 'Fair Price PHEI' yang sudah ada di template
         if 'Fair Price PHEI' in df_merged.columns:
              df_merged['Fair Price PHEI'] = df_merged[PHEI_VALUE_COL] / 1000000000000 
         else:
@@ -53,7 +70,7 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
         st.success(f"'{PHEI_VALUE_COL}' berhasil dihitung dan dibagi 1T. Nilai Fair Price PHEI (Kolom J) telah diperbarui.")
     
     return df_merged
-# ... (Akhir fungsi process_repo_data) ...
+# ... (Fungsi main() tidak berubah di bagian ini karena masalahnya ada di process_repo_data) ...
 
 
 # ============================
@@ -90,7 +107,6 @@ def main():
             # 1. Baca data dari template (untuk diproses)
             df_repo_main = pd.read_excel(repo_file_buffer, header=10) 
             df_repo_main.columns = df_repo_main.columns.str.replace('\n', ' ').str.strip()
-            # Kolom template yang akan kita timpa (A hingga kolom terakhir yang terdeteksi)
             original_repo_cols = df_repo_main.columns.tolist() 
 
             # -----------------------------------------------------------------
@@ -133,13 +149,12 @@ def main():
                 df_result_raw = process_repo_data(df_repo_main, df_phei_lookup)
                 
                 # --- MEMPERSIAPKAN DATA UNTUK DITIMPA ---
-                # Mengambil kolom data yang sesuai dengan urutan template (A hingga O/N)
                 df_to_write = df_result_raw[original_repo_cols].copy() 
 
                 # 3. Muat Workbook Openpyxl dari template
-                repo_file_buffer.seek(0) # Reset pointer
+                repo_file_buffer.seek(0) 
                 wb = load_workbook(repo_file_buffer)
-                sheet = wb.active # Asumsi sheet yang digunakan adalah yang aktif
+                sheet = wb.active 
                 
                 # 4. Tulis data ke dalam template mulai dari baris 12 (START_ROW_EXCEL)
                 
@@ -149,10 +164,8 @@ def main():
                     for c_idx, cell_value in enumerate(row_data):
                         col_number = START_COL_EXCEL + c_idx 
                         
-                        # Konversi NaN ke None agar sel di Excel kosong
                         final_value = cell_value if pd.notna(cell_value) else None 
                         
-                        # Tulis nilai ke sel
                         sheet.cell(row=row_number, column=col_number, value=final_value)
 
                 st.success(f"Data harian (termasuk Fair Price PHEI terbaru) berhasil ditimpa ke dalam template Excel.")

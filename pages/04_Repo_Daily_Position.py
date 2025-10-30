@@ -1,4 +1,4 @@
-# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - COPY PASTE KE TEMPLATE)
+# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - FIX NameError)
 
 import streamlit as st
 import pandas as pd
@@ -20,7 +20,10 @@ START_ROW_EXCEL = 12 # Baris A12 di Excel
 START_COL_EXCEL = 1 # Kolom A di Excel
 # ============================
 
-# ... (Fungsi process_repo_data tetap sama, karena logikanya sudah benar) ...
+# ============================
+# FUNGSI PENGOLAHAN DATA
+# ============================
+
 def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) -> pd.DataFrame:
     st.info(f"Melakukan VLOOKUP/Merge data: '{REPO_KEY_COL}' (Repo) -> '{PHEI_KEY_COL}' (PHEI)...")
     
@@ -46,12 +49,14 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
         total_rows = len(df_merged)
         st.write(f"📊 **Statistik Lookup Awal:** {initial_match_count} dari {total_rows} baris ({initial_match_count/total_rows:.2%}) berhasil dicocokkan.")
 
-        df_merged[PHEI_VALUE_COL] = pd.to_numeric(df_merged[PPEI_VALUE_COL], errors='coerce')
+        df_merged[PHEI_VALUE_COL] = pd.to_numeric(df_merged[PHEI_VALUE_COL], errors='coerce') # <-- Sudah diperbaiki di sini
+        
         # Ganti nama kolom Fair Price PHEI yang asli dengan hasil lookup
         # Pastikan kolom 'Fair Price PHEI' ada di df_repo_main agar bisa ditimpa
         # Jika 'Fair Price PHEI' adalah kolom J (indeks 9)
         if 'Fair Price PHEI' in df_merged.columns:
-             df_merged['Fair Price PHEI'] = df_merged[PHEI_VALUE_COL] / 1000000000000
+             # FIX TYPO DI BARIS INI: Menggunakan PHEI_VALUE_COL (sebelumnya PPEI_VALUE_COL)
+             df_merged['Fair Price PHEI'] = df_merged[PHEI_VALUE_COL] / 1000000000000 
         else:
              df_merged[PHEI_VALUE_COL] = df_merged[PHEI_VALUE_COL] / 1000000000000
         
@@ -60,6 +65,10 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
     return df_merged
 # ... (Akhir fungsi process_repo_data) ...
 
+
+# ============================
+# ANTARMUKA UTAMA
+# ============================
 
 def main():
     st.title("🔄 Otomatisasi Repo Daily Position")
@@ -85,7 +94,6 @@ def main():
 
     if repo_file_upload and phei_lookup_file:
         try:
-            # Baca file template Excel ke dalam buffer
             repo_file_buffer = BytesIO(repo_file_upload.getvalue())
             
             # 1. Baca data dari template (untuk diproses)
@@ -134,27 +142,18 @@ def main():
                 df_result_raw = process_repo_data(df_repo_main, df_phei_lookup)
                 
                 # --- MEMPERSIAPKAN DATA UNTUK DITIMPA ---
-                # Mengambil kolom data yang sesuai dengan template (A hingga O)
-                # Kita akan mengambil kolom sebanyak yang ada di template awal (original_repo_cols)
-                
-                # Jika kolom hasil lookup tidak ada di template (misal kolom TODAY FAIR PRICE)
-                # kita harus memastikan kolom yang ditimpa (Fair Price PHEI) mendapatkan data yang benar.
-                
-                # 1. Pastikan kolom yang akan ditulis adalah kolom-kolom asli template.
                 df_to_write = df_result_raw[original_repo_cols].copy() 
 
-                # 2. Muat Workbook Openpyxl dari template
+                # 3. Muat Workbook Openpyxl dari template
                 repo_file_buffer.seek(0) # Reset pointer
                 wb = load_workbook(repo_file_buffer)
                 sheet = wb.active # Asumsi sheet yang digunakan adalah yang aktif
                 
-                # 3. Tulis data ke dalam template mulai dari baris 12 (START_ROW_EXCEL)
+                # 4. Tulis data ke dalam template mulai dari baris 12 (START_ROW_EXCEL)
                 
                 for r_idx, row_data in df_to_write.iterrows():
-                    # openpyxl menggunakan indeks baris 1-based.
                     row_number = START_ROW_EXCEL + r_idx 
                     
-                    # Kolom yang akan ditimpa mulai dari A (indeks 1)
                     for c_idx, cell_value in enumerate(row_data):
                         col_number = START_COL_EXCEL + c_idx 
                         
@@ -166,7 +165,7 @@ def main():
 
                 st.success(f"Data hasil lookup dan perhitungan berhasil ditimpa ke dalam template Excel, mulai dari sel A{START_ROW_EXCEL} ke bawah.")
                 
-                # 4. Siapkan file untuk di-download
+                # 5. Siapkan file untuk di-download
                 output_buffer = BytesIO()
                 wb.save(output_buffer)
                 output_buffer.seek(0)
@@ -181,7 +180,6 @@ def main():
                 )
                 
                 st.subheader("Hasil Dataframe (Verifikasi Data yang Ditulis)")
-                # Tampilkan data yang sama yang baru saja ditulis ke template
                 st.dataframe(df_to_write)
 
         except Exception as e:

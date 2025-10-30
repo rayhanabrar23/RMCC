@@ -6,36 +6,32 @@ from io import BytesIO
 from datetime import datetime
 
 # ============================
-# KONSTANTA (Sesuai Koreksi Kunci dan Nilai)
+# KONSTANTA
 # ============================
 REPO_KEY_COL = 'Instrument Code' 
-PHEI_KEY_COL = 'SERIES' # Menggunakan SERIES karena ini yang berhasil dicocokkan
+PHEI_KEY_COL = 'SERIES' 
 NOMINAL_AMOUNT_COL = 'Nominal Amount' 
-PHEI_VALUE_COL = 'TODAY FAIR PRICE' # Menggunakan FAIR PRICE (Kolom J/Indeks 9 di VLOOKUP Anda)
+PHEI_VALUE_COL = 'TODAY FAIR PRICE' 
 
 START_ROW_EXCEL = 12 
 START_COL_EXCEL = 1 
 # ============================
 
 # ============================
-# FUNGSI PEMBERSIH KUNCI
+# FUNGSI PEMBERSIH KUNCI (Tetap sama)
 # ============================
-
 def clean_key_extreme(series):
-    # Pembersihan Ekstrem: Hapus spasi, upper-case, dan hapus semua karakter non-alfanumerik
     series = series.astype(str).str.strip().str.upper()
     series = series.replace(r'[^A-Z0-9]', '', regex=True)
     return series
 
 # ============================
-# FUNGSI PENGOLAHAN DATA UTAMA
+# FUNGSI PENGOLAHAN DATA UTAMA (Tetap sama)
 # ============================
-
 def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) -> pd.DataFrame:
     st.info(f"Melakukan VLOOKUP/Merge data: '{REPO_KEY_COL}' (Repo) -> '{PHEI_KEY_COL}' (PHEI)...")
     st.warning("Membersihkan kolom kunci dan nilai (EKSTREM)...")
     
-    # 1. Bersihkan Kunci
     if REPO_KEY_COL in df_repo_main.columns:
         df_repo_main[REPO_KEY_COL] = clean_key_extreme(df_repo_main[REPO_KEY_COL])
     
@@ -63,20 +59,12 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
         total_rows = len(df_merged)
         st.write(f"📊 **Statistik Lookup Akhir:** {initial_match_count} dari {total_rows} baris ({initial_match_count/total_rows:.2%}) berhasil dicocokkan.")
 
-        # --- PERBAIKAN SKALA NILAI HARGA MENTAH ---
         df_merged['RAW_PHEI_VALUE'] = df_merged[PHEI_VALUE_COL].astype(str)
-        
-        # Hapus pemisah ribuan (titik dan koma) untuk membaca angka Triliunan yang utuh
         df_merged['RAW_PHEI_VALUE'] = df_merged['RAW_PHEI_VALUE'].str.replace(',', '', regex=False).str.replace('.', '', regex=False)
-        
-        # Konversi ke numerik (seharusnya sekarang menjadi angka Triliunan yang benar)
         df_merged['RAW_PHEI_VALUE'] = pd.to_numeric(df_merged['RAW_PHEI_VALUE'], errors='coerce') 
-        
         st.info(f"Nilai Mentah PHEI ({PHEI_VALUE_COL}) telah dibersihkan dan dikonversi ke numerik.")
         
-        # 4. Melakukan Pembagian 1T dan memasukkan ke Kolom J
         if 'Fair Price PHEI' in df_merged.columns:
-             # Nilai yang sudah bersih dibagi 1 Triliun (12 nol)
              df_merged['Fair Price PHEI'] = df_merged['RAW_PHEI_VALUE'] / 1000000000000 
              st.success(f"Nilai **Fair Price PHEI (Kolom J)** berhasil diperbarui.")
         else:
@@ -114,8 +102,6 @@ def main():
     if repo_file_upload and phei_lookup_file:
         try:
             repo_file_buffer = BytesIO(repo_file_upload.getvalue())
-            
-            # 1. Baca data dari template (untuk diproses)
             df_repo_main = pd.read_excel(repo_file_buffer, header=10) 
             df_repo_main.columns = df_repo_main.columns.str.replace('\n', ' ').str.strip()
             original_repo_cols = df_repo_main.columns.tolist() 
@@ -142,7 +128,7 @@ def main():
             df_phei_lookup.columns = df_phei_lookup.columns.str.strip() 
             # -----------------------------
 
-            # --- VALIDASI & PREP ---
+            # --- VALIDASI & PREP (Sama) ---
             if REPO_KEY_COL not in df_repo_main.columns or NOMINAL_AMOUNT_COL not in df_repo_main.columns:
                  st.error(f"Kolom kunci ('{REPO_KEY_COL}' atau '{NOMINAL_AMOUNT_COL}') TIDAK DITEMUKAN di Repo File.")
                  return
@@ -153,7 +139,7 @@ def main():
                 st.error(f"Kolom kunci **'{PHEI_KEY_COL}'** atau nilai **'{PHEI_VALUE_COL}'** TIDAK DITEMUKAN di file lookup PHEI.")
                 st.info("Kolom yang ditemukan di File PHEI (setelah parsing): " + str(df_phei_lookup.columns.tolist()))
                 return
-            
+
             
             if st.button("Jalankan Otomatisasi Lookup & Isi Kolom J", type="primary"):
                 st.success("Mulai Pemrosesan Data...")
@@ -176,8 +162,40 @@ def main():
                     st.error("Gagal menemukan kolom 'Fair Price PHEI' (Kolom J) di template.")
                     return
                 
-                # 4. Tulis HANYA KOLOM J ke dalam template mulai dari baris 12
                 
+                # --- PERBAIKAN MERGED CELL KRITIS ---
+                
+                # 4a. Tentukan rentang penggabungan yang perlu ditangani: A2:O2
+                
+                # Target Sel B2 (Tanggal)
+                merged_range_B2 = 'A2:O2' 
+                
+                # Target Kolom J (Fair Price PHEI) dari Baris 12 hingga akhir data
+                max_row_data = START_ROW_EXCEL + len(df_to_write) - 1
+                col_letter_J = chr(ord('@') + fair_price_col_index) # Konversi index (10) ke huruf (J)
+                
+                # Karena Kolom J tidak mungkin digabungkan secara vertikal, kita hanya perlu menangani B2.
+                # Namun, kita cek semua merged cells, dan hapus jika tumpang tindih
+                
+                merged_cells_to_remerge = []
+                st.warning("Menghapus sementara penggabungan sel (Merged Cells)...")
+                
+                for merged_range in list(sheet.merged_cells):
+                    # Cek apakah range yang digabungkan tumpang tindih dengan B2 atau Kolom J
+                    if merged_range.coord == merged_range_B2 or (merged_range.min_col == fair_price_col_index and merged_range.min_row >= START_ROW_EXCEL):
+                         merged_cells_to_remerge.append(merged_range.coord)
+                         sheet.unmerge_cells(merged_range.coord)
+                
+                # 4b. Tulis Nilai ke Sel B2 (Tanggal)
+                today_date = datetime.now()
+                date_str_formatted = today_date.strftime('%d %b %Y') 
+                b2_value = f"Daily As of Date : {date_str_formatted} - {date_str_formatted}"
+                
+                # Tulis nilai ke Sel B2 (Baris 2, Kolom B/2). Ini akan berhasil karena A2:O2 sudah di-unmerge
+                sheet.cell(row=2, column=2, value=b2_value) 
+                st.info(f"📅 Sel B2 (Tanggal) berhasil diperbarui menjadi: **{b2_value}**.")
+                
+                # 4c. Tulis Kolom J (Fair Price PHEI) mulai dari baris 12
                 for r_idx, row_data in df_to_write.iterrows():
                     row_number = START_ROW_EXCEL + r_idx 
                     
@@ -187,18 +205,11 @@ def main():
                     sheet.cell(row=row_number, column=fair_price_col_index, value=final_value)
 
                 st.success(f"✅ Data Fair Price PHEI (Kolom J) berhasil ditimpa ke dalam template Excel.")
-                
-                # --- TAMBAHAN OTOMASI TANGGAL DI B2 ---
-                today_date = datetime.now()
-                # Format tanggal contoh: "30 Okt 2025"
-                date_str_formatted = today_date.strftime('%d %b %Y') 
-                
-                # String final untuk Sel B2: "Daily As of Date : 30 Okt 2025 - 30 Okt 2025"
-                b2_value = f"Daily As of Date : {date_str_formatted} - {date_str_formatted}"
-                
-                # Tulis nilai ke Sel B2 (Baris 2, Kolom B/2)
-                sheet.cell(row=2, column=2, value=b2_value)
-                st.info(f"📅 Sel B2 (Tanggal) berhasil diperbarui menjadi: **{b2_value}**.")
+
+                # 4d. Gabungkan kembali sel yang dihapus (untuk format)
+                for merged_range_coord in merged_cells_to_remerge:
+                    sheet.merge_cells(merged_range_coord)
+                st.success("✅ Penggabungan sel asli (Merged Cells) berhasil dikembalikan.")
                 # ------------------------------------
 
                 # 5. Siapkan file untuk di-download

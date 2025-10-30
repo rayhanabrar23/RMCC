@@ -1,5 +1,3 @@
-# pages/04_Repo_Daily_Position.py (FINAL FULL CODE - FIX LOOKUP 0%)
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,16 +6,20 @@ from io import BytesIO
 from datetime import datetime
 
 # ============================
-# KONSTANTA (TETAP SAMA)
+# KONSTANTA
 # ============================
+# Kunci di File Repo (Kolom E)
 REPO_KEY_COL = 'Instrument Code' 
+# Kunci di File PHEI (Kolom B/C)
 PHEI_KEY_COL = 'ISIN CODE' 
+# Kolom di File Repo yang berisi Nominal Amount (untuk dropna)
 NOMINAL_AMOUNT_COL = 'Nominal Amount' 
+# Nilai yang diambil dari File PHEI (Kolom J)
 PHEI_VALUE_COL = 'TODAY FAIR PRICE' 
 
 # BARIS DAN KOLOM TEMPLATE TARGET
-START_ROW_EXCEL = 12 
-START_COL_EXCEL = 1 
+START_ROW_EXCEL = 12 # Baris A12 di Excel (indeks baris openpyxl)
+START_COL_EXCEL = 1 # Kolom A di Excel (indeks kolom openpyxl)
 # ============================
 
 # ============================
@@ -27,7 +29,7 @@ START_COL_EXCEL = 1
 def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) -> pd.DataFrame:
     st.info(f"Melakukan VLOOKUP/Merge data: '{REPO_KEY_COL}' (Repo) -> '{PHEI_KEY_COL}' (PHEI)...")
     
-    # --- LANGKAH PENTING: PEMBERSIHAN KUNCI (KEY CLEANING) ---
+    # --- PEMBERSIHAN KUNCI AGRESIF ---
     st.warning("Membersihkan kolom kunci (mengubah ke string, menghapus spasi, upper-case)...")
     
     # 1. Bersihkan Kunci di File REPO
@@ -37,7 +39,12 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
     # 2. Bersihkan Kunci di File PHEI
     if PHEI_KEY_COL in df_phei_lookup.columns:
         df_phei_lookup[PHEI_KEY_COL] = df_phei_lookup[PHEI_KEY_COL].astype(str).str.strip().str.upper()
-    # ----------------------------------------------------------
+    
+    # --- DIAGNOSA: Tampilkan data kunci Repo yang sudah dibersihkan ---
+    st.subheader("Data Kunci Repo yang Digunakan (CEK KECOCOKAN DENGAN FILE PHEI):")
+    st.dataframe(df_repo_main[[REPO_KEY_COL, NOMINAL_AMOUNT_COL]].head())
+    st.caption(f"Pastikan nilai di kolom '{REPO_KEY_COL}' ini **sama persis** dengan kode di File PHEI Anda, atau *lookup* akan menghasilkan 0.00% match.")
+    # -----------------------------------------------------------------
 
     # Persiapan File PHEI
     df_phei_lookup = df_phei_lookup.dropna(subset=[PHEI_KEY_COL, PHEI_VALUE_COL]).copy()
@@ -62,6 +69,7 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
 
         df_merged[PHEI_VALUE_COL] = pd.to_numeric(df_merged[PHEI_VALUE_COL], errors='coerce') 
         
+        # Perhitungan: Update kolom 'Fair Price PHEI' di template
         if 'Fair Price PHEI' in df_merged.columns:
              df_merged['Fair Price PHEI'] = df_merged[PHEI_VALUE_COL] / 1000000000000 
         else:
@@ -70,8 +78,6 @@ def process_repo_data(df_repo_main: pd.DataFrame, df_phei_lookup: pd.DataFrame) 
         st.success(f"'{PHEI_VALUE_COL}' berhasil dihitung dan dibagi 1T. Nilai Fair Price PHEI (Kolom J) telah diperbarui.")
     
     return df_merged
-# ... (Fungsi main() tidak berubah di bagian ini karena masalahnya ada di process_repo_data) ...
-
 
 # ============================
 # ANTARMUKA UTAMA
@@ -88,7 +94,7 @@ def main():
             '1. 📂 Unggah File Repo Template (Gunakan **Output Hari Sebelumnya**)', 
             type=['xlsx'], 
             key='Reverse Repo Bonds Daily Position',
-            help="Ini adalah file Excel (.xlsx) dari tanggal kemarin. Seluruh data dari A12 ke bawah akan ditimpa."
+            help="Ini adalah file Excel (.xlsx) dari tanggal kemarin. Data dari A12 ke bawah akan ditimpa."
         )
     with col2:
         phei_lookup_file = st.file_uploader(
@@ -118,6 +124,7 @@ def main():
                 for enc in encodings_to_try:
                     try:
                         file_buffer = BytesIO(phei_lookup_file.getvalue())
+                        # Menggunakan encoding yang lebih kuat untuk mengatasi header
                         df_phei_lookup = pd.read_csv(file_buffer, delimiter=',', encoding=enc)
                         break 
                     except Exception:
@@ -166,6 +173,7 @@ def main():
                         
                         final_value = cell_value if pd.notna(cell_value) else None 
                         
+                        # Tulis nilai ke sel
                         sheet.cell(row=row_number, column=col_number, value=final_value)
 
                 st.success(f"Data harian (termasuk Fair Price PHEI terbaru) berhasil ditimpa ke dalam template Excel.")

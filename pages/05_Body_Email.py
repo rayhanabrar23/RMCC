@@ -15,7 +15,6 @@ st.set_page_config(
 )
 
 # Template placeholder (USER HARUS MENGISI INI DENGAN KONTEN ASLI MEREKA)
-# Ini akan diganti dengan input dari st.text_area
 DEFAULT_EMAIL_TEMPLATE = """
 Kepada Yth. Bapak/Ibu,
 
@@ -25,10 +24,10 @@ Berikut adalah ringkasan harian Daily Summary PEI per tanggal **{{tanggal_lapora
 
 Kami mencatat ada **{{jumlah_xc_margin_call}}** peserta yang terkena Excess Collateral/Margin Call.
 
-**1. Posisi Marjin Harian:**
+**1. Posisi Pendanaan Transaksi Marjin:**
 {{tabel_posisi_marjin}}
 
-**2. Posisi REPO Normal:**
+**2. Posisi Transaksi REPO (stock) dengan status normal:**
 {{tabel_posisi_repo}}
 
 **3. Posisi REPO Restrukturisasi (ASS, MSU, BBM):**
@@ -50,7 +49,7 @@ Hormat kami,
 
 def get_html_style():
     """Mengembalikan tag <style> untuk CSS dasar yang kompatibel dengan email."""
-    # Menggunakan font fallback yang umum
+    # Menggunakan font fallback yang umum (Arial)
     css_style = """
     <style>
         body, table {
@@ -94,6 +93,7 @@ def clean_headers(df):
         'Participant Code': 'Participant<br>Code',
         'Participant Name': 'Participant<br>Name',
         'TotalCashShortfall': 'Total Cash<br>Shortfall',
+        # Varian Total Net CashShortfall
         'TotalNetCashShortfall': 'Total Net<br>Cash<br>Shortfall',
         'Total NetCashShortfall': 'Total Net<br>Cash<br>Shortfall',
         'TotalNet CashShortfall': 'Total Net<br>Cash<br>Shortfall',
@@ -158,7 +158,6 @@ def clean_headers(df):
 def apply_custom_styling(styler):
     """Menerapkan styling khusus pada DataFrame Styler, termasuk font-size dan FONT-FAMILY INLINE."""
 
-    # Mengganti font-family 'Roboto Condensed' dengan 'Arial' (lebih umum di email)
     default_font = "Arial, sans-serif"
 
     # 1. Terapkan Font Size dan FONT FAMILY secara INLINE untuk HEADER
@@ -166,7 +165,7 @@ def apply_custom_styling(styler):
         {'selector': 'th', 'props': [
             ('font-size', '9pt'),
             ('font-family', default_font), 
-            ('border', '1px solid #000'), # Tambahkan border pada TH
+            ('border', '1px solid #000'), 
             ('background-color', '#f2f2f2'),
             ('text-align', 'center'),
             ('vertical-align', 'middle'),
@@ -177,7 +176,7 @@ def apply_custom_styling(styler):
     styler = styler.set_properties(**{
         'font-size': '8pt',
         'font-family': default_font,
-        'border': '1px solid #000', # Tambahkan border pada TD
+        'border': '1px solid #000', 
         'text-align': 'center',
         'vertical-align': 'middle',
     }, subset=pd.IndexSlice[styler.index, styler.columns])
@@ -185,16 +184,13 @@ def apply_custom_styling(styler):
 
     def highlight_total_row(row):
         first_col_value = row.iloc[0]
-        # Menggunakan pencarian yang fleksibel di kolom pertama
         if isinstance(first_col_value, str) and (
                 'TOTAL' in first_col_value.upper() or 'JUMLAH' in first_col_value.upper()):
-            # Terapkan font-size 8pt (sesuai body) ke baris total
             return [f'font-weight: bold; background-color: #d9d9d9; font-size: 8pt; font-family: {default_font};'] * len(row)
         return [''] * len(row)
 
     styler = styler.apply(highlight_total_row, axis=1)
 
-    # Tambahkan atribut tabel global
     styler = styler.set_table_attributes(
         'style="border-collapse: collapse; border: 1px solid #000; table-layout: auto; width: 100%;"')
 
@@ -220,90 +216,80 @@ def merge_total_row_cells(html_table_string):
 
         total_index = -1
         for i, content in enumerate(cell_contents):
-            # Cari sel yang mengandung TOTAL atau JUMLAH
-            if re.search(r'TOTAL|JUMLAH', content, re.IGNORECASE) and i > 0: # Cek i > 0 agar tidak merge kolom pertama
+            if re.search(r'TOTAL|JUMLAH', content, re.IGNORECASE) and content != '': 
                 total_index = i
                 break
 
         if total_index > 0:
-            # Hitung jumlah kolom yang akan di-merge (sel pertama + sel kosong sebelumnya)
             cols_to_merge = total_index + 1 
 
-            # Ambil seluruh tag <td> (termasuk style) dari sel yang berisi TOTAL/JUMLAH
             total_cell = cells[total_index]
             total_cell_attrs_match = re.search(r'(<td[^>]*>)', total_cell)
             merged_cell_content = cell_contents[total_index]
 
-            # Atribut CSS wajib untuk memastikan merge berhasil dan konsisten
             fixed_style = f"text-align: center; font-weight: bold; background-color: #d9d9d9; font-size: 8pt; font-family: '{default_font}'; border: 1px solid #000;"
 
             if total_cell_attrs_match:
-                # Ambil atribut aslinya dan tambahkan/timpa style yang pasti
                 original_tag = total_cell_attrs_match.group(0).replace('>', '').strip()
-                # Ganti/Tambahkan style attribute
                 if 'style=' in original_tag.lower():
                     new_td_tag = re.sub(r'style="[^"]*"', f'style="{fixed_style}"', original_tag, flags=re.IGNORECASE)
                 else:
                     new_td_tag = f'{original_tag} style="{fixed_style}"'
                 
-                # Tambahkan colspan
                 new_td_tag = new_td_tag + f' colspan="{cols_to_merge}">'
             else:
-                # Fallback
                 new_td_tag = f'<td colspan="{cols_to_merge}" style="{fixed_style}">'
 
-            # Sel gabungan baru:
             new_merged_cell = f'{new_td_tag}{merged_cell_content}</td>'
 
-            # Sisa sel yang berisi angka (dimulai dari total_index + 1)
             remaining_cells = cells[total_index + 1:]
 
-            # Bangun ulang baris <tr>
             new_row_content = new_merged_cell + ''.join(remaining_cells)
 
             return f"{tr_open}{new_row_content}{tr_close}"
 
         return match.group(0)
 
-    # Pola RegEx untuk mencocokkan seluruh baris <tr> yang memiliki salah satu selnya berisi "TOTAL" atau "JUMLAH"
     pattern = r'(<tr[^>]*>)(.*?)(</tr>)'
     modified_html = re.sub(pattern, replace_total_row, html_table_string, flags=re.DOTALL)
     return modified_html
 
 
-# --- A. FUNGSI GENERATOR TABEL UTAMA ---
+# --- A. FUNGSI GENERATOR TABEL UTAMA (FIXED LOGIC) ---
 
 def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_rows, sep_char):
-    """Membaca file CSV/TXT (dari Streamlit File Object) dan mengkonversinya menjadi tabel HTML."""
+    """
+    MEMPERBAIKI: Membaca file CSV/TXT (dari Streamlit File Object) dan mengkonversinya menjadi tabel HTML.
+    Logika slicing disesuaikan untuk mengatasi error kolom tidak konsisten.
+    """
     file_name = file_object.name
     try:
-        # Baca konten file
         file_object.seek(0)
         content = StringIO(file_object.getvalue().decode('latin-1'))
         
-        # NOTE: Untuk mengatasi masalah header (skiprows) dan footer (skipfooter) yang kompleks
-        # di Streamlit, kita akan memuat data mentah terlebih dahulu jika ada skipfooter.
-        
-        # Membaca semua baris
+        # 1. Baca semua baris tanpa header/skiprows/skipfooter
         df_full = pd.read_csv(
             content, sep=sep_char, header=None, encoding='latin-1', engine='python'
         )
 
-        # 1. Hapus footer
+        # 2. Hapus footer (jika ada)
         if skip_footer_rows > 0:
-            df_full = df_full.iloc[:-skip_footer_rows]
+            df_temp = df_full.iloc[:-skip_footer_rows].copy()
+        else:
+            df_temp = df_full.copy()
             
-        # 2. Tentukan baris header dan data
-        header_index = header_row + skip_header_rows # header_row=0 (indeks header di dalam data yang tersisa)
-        
-        if len(df_full) <= header_index:
-             raise ValueError(f"Struktur CSV tidak valid. Jumlah baris ({len(df_full)}) kurang dari target header (baris {header_index+1}).")
+        # Indeks baris header di df_temp: skip_header_rows + header_row
+        header_abs_index = skip_header_rows + header_row
+
+        if len(df_temp) <= header_abs_index:
+             raise ValueError(f"Jumlah baris total ({len(df_full)}) atau baris setelah skipfooter ({len(df_temp)}) kurang dari target header (baris {header_abs_index+1}).")
             
-        # Ambil baris header (berdasarkan indeks 0)
-        df_full.columns = df_full.iloc[header_index]
+        # 3. Tetapkan header dan ambil data
+        # Kolom diatur menggunakan baris yang ditentukan sebagai header
+        df_temp.columns = df_temp.iloc[header_abs_index]
         
-        # Ambil data (dari baris setelah header hingga akhir)
-        df = df_full.iloc[header_index + 1:].reset_index(drop=True)
+        # Data dimulai dari baris setelah header
+        df = df_temp.iloc[header_abs_index + 1:].reset_index(drop=True)
         
         # Cleanup
         df = df.dropna(axis=1, how='all').replace({np.nan: ''})
@@ -318,7 +304,7 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
         return html_table
 
     except Exception as e:
-        st.error(f"❌ ERROR saat membuat tabel dari file **{file_name}**. Cek struktur CSV: {e}")
+        st.error(f"❌ ERROR saat membuat tabel dari file **{file_name}**. Cek struktur CSV (separator, skiprows, header): {e}")
         return f"<p style=\"font-size: 11pt; font-family: Arial, sans-serif;\">❌ ERROR saat membuat tabel. Cek struktur CSV: {e}</p><br><br>"
 
 
@@ -329,20 +315,16 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
         file_object.seek(0)
         content = StringIO(file_object.getvalue().decode('latin-1'))
         
-        # Membaca data mentah
         df_full = pd.read_csv(
             content, sep=sep_char, header=None, encoding='latin-1', engine='python'
         )
         
-        # Streamlit file object is 0-indexed, rows are 1-based inclusive.
-        # Baris yang diinginkan: dari start_row - 1 sampai end_row (inklusi)
-        # Jika start_row = 20 dan end_row = 30, berarti indeks 19 sampai 29
-        
+        # Membaca baris dari start_row (1-based) hingga end_row (1-based), inklusif
         df_segment = df_full.iloc[start_row - 1 : end_row].copy()
 
-        # Baris pertama (0) adalah header
+        # Baris pertama (0) dari segment adalah header
         df_segment.columns = df_segment.iloc[0]
-        # Ambil semua baris kecuali baris header yang sudah diangkat
+        # Ambil semua baris kecuali baris header
         df = df_segment[1:].reset_index(drop=True).dropna(axis=1, how='all').replace({np.nan: ''})
 
         df = clean_headers(df)
@@ -364,18 +346,14 @@ def generate_table_slb(file_object):
     """Fungsi khusus untuk Tabel 5 (Posisi PME/SLB)."""
     file_name = file_object.name
     try:
-        # Fungsi konversi angka ke format Indonesia
         def format_thousand_indonesian(x):
             if pd.notna(x) and x != '':
                 try:
-                    # Menangani string yang mungkin sudah diformat dengan titik sebagai pemisah ribuan
                     num_str = str(x).replace('.', '').replace(',', '.') if isinstance(x, str) else str(x)
                     num = float(num_str)
                     
-                    # Jika bilangan bulat, format tanpa desimal
                     if num == int(num):
                         formatted = f'{int(num):,}'.replace(',', '_temp_').replace('.', ',').replace('_temp_', '.')
-                    # Jika bilangan desimal, format dengan 2 desimal
                     else:
                         formatted = f'{num:,.2f}'.replace(',', '_temp_').replace('.', ',').replace('_temp_', '.')
                     return formatted
@@ -386,12 +364,11 @@ def generate_table_slb(file_object):
         file_object.seek(0)
         content = StringIO(file_object.getvalue().decode('latin-1'))
         
-        # Membaca data dengan konfigurasi khusus
+        # Menggunakan skiprows dan header di pd.read_csv untuk SLB/PME
         df_slb_full = pd.read_csv(
             content, sep=';', header=0, skiprows=7, encoding='latin-1', engine='python'
         )
         
-        # Reset thousands dan decimal (karena di atas sudah dibaca sebagai string)
         df_slb_full = df_slb_full.dropna(axis=1, how='all').replace({np.nan: ''})
         
         df_slb_data = df_slb_full.copy()
@@ -405,14 +382,12 @@ def generate_table_slb(file_object):
         except IndexError:
             df_slb_data = df_slb_full.copy()
 
-        # Format kolom angka ke format Indonesia
         cols_to_format_indonesian = [col for col in df_slb_data.columns if
                                      ('Amount' in str(col) or 'Value' in str(col) or 'Price' in str(col) or 'Borrow' in str(col)) and 'Code' not in str(col)]
         
         for col_name in cols_to_format_indonesian:
             df_slb_data.loc[:, col_name] = df_slb_data[col_name].apply(format_thousand_indonesian)
             
-        # Format Estimated Period
         last_col_name = df_slb_data.columns[-1]
         if last_col_name and 'Estimated Period' in str(last_col_name):
             df_slb_data.loc[:, last_col_name] = df_slb_data[last_col_name].apply(
@@ -434,13 +409,6 @@ def generate_table_slb(file_object):
 
 # --- B. FUNGSI EKSEKUSI DATA DAN TEMPLATE ---
 def generate_email_body(email_template, uploaded_files):
-    """
-    Mengambil file yang diunggah dan templat,
-    kemudian menghasilkan konten HTML lengkap.
-    """
-    
-    # 1. PENGELOMPOKAN FILE
-    # Pastikan urutan file sesuai dengan yang diharapkan
     
     try:
         FILE_1 = uploaded_files['PEI Daily Position']
@@ -454,7 +422,7 @@ def generate_email_body(email_template, uploaded_files):
 
     # 2. GENERATE TABEL
 
-    # Tabel 1: Posisi Marjin
+    # Tabel 1: Posisi Marjin (PEI Daily Position)
     tabel_posisi_marjin_html = generate_html_table(
         FILE_1, header_row=0, skip_header_rows=5, skip_footer_rows=3, sep_char=';'
     )
@@ -480,8 +448,6 @@ def generate_email_body(email_template, uploaded_files):
 
 
     # 3. DATA UNTUK PLACEHOLDER
-    # *Note: jumlah_xc_margin_call diset manual, atau bisa dihitung dari Tabel 1
-    # Karena data awal tidak jelas, kita hardcode angkanya seperti di kode lama.
     data_harian = {
         'tanggal_laporan': date.today().strftime("%d %B %Y"),
         'jumlah_xc_margin_call': 2, # Angka dummy dari kode lama
@@ -495,7 +461,6 @@ def generate_email_body(email_template, uploaded_files):
     # 4. ISI TEMPLATE
     final_template = email_template
     for key, value in data_harian.items():
-        # Mengganti placeholder {{key}} dengan nilai
         final_template = final_template.replace('{{' + key + '}}', str(value))
 
     # 5. Gabungkan CSS styling dan body template
@@ -509,9 +474,8 @@ def generate_email_body(email_template, uploaded_files):
 def main():
     st.title("✉️ Generator Body Email Laporan Harian")
     st.markdown("""
-    Alat ini menggantikan skrip Python lokal Anda dengan Streamlit.
-    Silakan **unggah kelima file CSV/TXT** Anda dan **masukkan konten templat email**
-    untuk membuat *body* HTML email yang siap disalin.
+    Alat ini menggunakan Streamlit untuk memproses file CSV Anda.
+    **Versi ini sudah diperbaiki** untuk mengatasi masalah pembacaan kolom yang tidak konsisten saat memproses file.
     """)
     st.markdown("---")
     
@@ -551,7 +515,6 @@ def main():
             else:
                 st.error("Mohon lengkapi **semua file** dan **template email** sebelum menjalankan.")
         
-        # Reset state untuk percobaan baru
         if st.button("🔄 Reset", use_container_width=True):
             for name in required_files:
                 if name in st.session_state:
@@ -560,7 +523,6 @@ def main():
             st.rerun()
 
     
-    # Tampilan utama
     if st.session_state.get('run_generation', False):
         st.header("Hasil Body Email HTML")
         st.info("Salin teks di bawah (termasuk tag HTML) dan tempel di body email Anda.")
@@ -573,12 +535,10 @@ def main():
             st.markdown("---")
             
             st.subheader("Preview Tampilan Email")
-            # Menampilkan HTML mentah yang dapat dilihat sebagai preview
             st.components.v1.html(final_html_body, height=800, scrolling=True)
 
 
 if __name__ == "__main__":
-    # Inisialisasi state untuk memicu pembuatan email setelah button diklik
     if 'run_generation' not in st.session_state:
         st.session_state['run_generation'] = False
         

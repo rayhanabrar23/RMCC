@@ -499,62 +499,39 @@ def generate_table_slb(file_object):
 # --- B. FUNGSI EKSEKUSI DATA DAN TEMPLATE ---
 def generate_email_body(email_template, uploaded_files):
     
+    # --- DEBUG MODE: FOKUS PADA FILE 1 SAJA ---
     try:
         FILE_1 = uploaded_files['PEI Daily Position']
-        FILE_2 = uploaded_files['Repo Daily Position Normal']
-        FILE_3 = uploaded_files['Repo Daily Position ASS, MSU, BBM']
-        FILE_4 = uploaded_files['Reverse Repo Bonds Daily Position']
-        FILE_5 = uploaded_files['SLB Position']
-    except KeyError as e:
-        st.error(f"File **{e.args[0]}** belum diunggah. Mohon lengkapi semua file.")
-        return None
+    except KeyError:
+        st.error("❌ Mohon unggah file **PEI Daily Position** untuk memulai langkah *debugging* pertama.")
+        # Mengatur placeholder untuk output agar aplikasi tidak crash
+        FILE_1 = None 
+        # Tambahkan placeholder untuk file yang hilang agar code bisa jalan
+        tabel_posisi_marjin_html = "<p style=\"font-size: 10pt; color: red;\">-- ERROR: File PEI Daily Position hilang --</p><br><br>"
 
     # 2. GENERATE TABEL
 
-    # Tabel 1: Posisi Marjin (PEI Daily Position)
-    # Konfigurasi: Header di Baris 5 (skip 4 baris sebelumnya).
-    # skip_footer_rows=0 (DIGANTI dengan logika pencarian TOTAL yang lebih aman)
-    tabel_posisi_marjin_html = generate_html_table(
-        FILE_1, 
-        header_row=0, 
-        skip_header_rows=4, 
-        skip_footer_rows=0, # FIX V6: Dibuat 0. Logic 'TOTAL' di dalam fungsi
-        sep_char=';', # FIX V6: Kembali ke semicolon
-        apply_number_format=True, 
-        aggressive_clean=True 
-    )
-    tabel_posisi_marjin_html = "<br>" + tabel_posisi_marjin_html
+    # Tabel 1: Posisi Marjin (PEI Daily Position) - TARGET DEBUGGING
+    if FILE_1:
+        # Konfigurasi: Header di Baris 5 (skip 4 baris sebelumnya).
+        tabel_posisi_marjin_html = generate_html_table(
+            FILE_1, 
+            header_row=0, 
+            skip_header_rows=4, 
+            skip_footer_rows=0, 
+            sep_char=';', 
+            apply_number_format=True, 
+            aggressive_clean=True 
+        )
+        tabel_posisi_marjin_html = "<br>" + tabel_posisi_marjin_html
     
-    # Tabel 2: Posisi REPO Normal
-    # Konfigurasi: Header di Baris 17 (skip 16 baris sebelumnya).
-    # skip_footer_rows=0 (DIGANTI dengan logika pencarian TOTAL yang lebih aman)
-    tabel_posisi_repo_html = generate_html_table(
-        FILE_2, 
-        header_row=0, 
-        skip_header_rows=16, 
-        skip_footer_rows=0, # FIX V6: Dibuat 0. Logic 'TOTAL' di dalam fungsi
-        sep_char=';', # FIX V6: Kembali ke semicolon
-        apply_number_format=True, 
-        aggressive_clean=True 
-    )
-    
-    # Tabel 3: REPO Restrukturisasi
-    # Konfigurasi: Header di Baris 20, data sampai Baris 30 (range 20-30)
-    # Tidak perlu skip_footer_rows, karena sudah dibatasi oleh row range
-    tabel_repo_restrukturisasi_html = generate_html_table_by_row_range(
-        FILE_3, start_row=20, end_row=30, sep_char=';' # FIX V6: Kembali ke semicolon
-    )
-    
-    # Tabel 4: Reverse Repo Bond
-    # Konfigurasi: Header di Baris 11, data sampai Baris 15 (range 11-15)
-    # Tidak perlu skip_footer_rows, karena sudah dibatasi oleh row range
-    tabel_repo_bond_html = generate_html_table_by_row_range(
-        FILE_4, start_row=11, end_row=15, sep_char=';' # FIX V6: Kembali ke semicolon
-    )
-    
-    # Tabel 5: Posisi PME/SLB (Menggunakan fungsi khusus)
-    # Konfigurasi: Header di Baris 8 (skip 7 baris sebelumnya)
-    tabel_posisi_pme_html = generate_table_slb(FILE_5)
+    # Placeholder untuk tabel 2, 3, 4, 5 (mode DEBUG)
+    placeholder_html = "<p style=\"font-size: 10pt; color: gray;\">-- BELUM DIPROSES (DEBUG MODE: File ini diabaikan sementara) --</p><br><br>"
+    tabel_posisi_repo_html = placeholder_html
+    tabel_repo_restrukturisasi_html = placeholder_html
+    tabel_repo_bond_html = placeholder_html
+    tabel_posisi_pme_html = placeholder_html
+    # --- DEBUG MODE END ---
 
 
     # 3. DATA UNTUK PLACEHOLDER
@@ -589,7 +566,9 @@ def main():
     **Versi ini sudah ditingkatkan** dengan logika pembacaan yang lebih stabil,
     kembali menggunakan pemisah **titik koma (`;`)** dan menggunakan deteksi baris **'TOTAL'**
     untuk memotong data secara aman.
-    """)
+    
+    <span style="color: red; font-weight: bold;">-- MODE DEBUG SATU PER SATU AKTIF --</span>
+    """, unsafe_allow_html=True)
     st.markdown("---")
     
     uploaded_files_map = {}
@@ -605,6 +584,7 @@ def main():
         st.markdown("---")
         
         st.header("2. Unggah File CSV/TXT")
+        st.caption("Fokuskan pada File 1 saja saat ini (PEI Daily Position).")
         
         required_files = [
             'PEI Daily Position',
@@ -622,11 +602,12 @@ def main():
                 
         st.markdown("---")
         
+        # Logika tombol diubah agar bisa jalan jika hanya FILE 1 yang terisi.
         if st.button("🚀 Buat Body Email HTML", use_container_width=True, type="primary"):
-            if len(uploaded_files_map) == len(required_files) and email_template_input:
+            if 'PEI Daily Position' in uploaded_files_map and email_template_input:
                 st.session_state['run_generation'] = True
             else:
-                st.error("Mohon lengkapi **semua file** dan **template email** sebelum menjalankan.")
+                st.error("Mohon unggah **PEI Daily Position** dan isi **template email** sebelum menjalankan.")
         
         if st.button("🔄 Reset", use_container_width=True):
             # Menghapus file dan state dari sesi

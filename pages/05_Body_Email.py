@@ -276,7 +276,7 @@ def merge_total_row_cells(html_table_string):
 
 # --- A. FUNGSI GENERATOR TABEL UTAMA (ROBUST LOGIC) ---
 
-def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_rows, sep_char, apply_number_format=False):
+def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_rows, sep_char, apply_number_format=False, aggressive_clean=False):
     """
     Membaca file CSV/TXT (dari Streamlit File Object) dan mengkonversinya menjadi tabel HTML.
     Meningkatkan robustness terhadap file yang lebih pendek dari yang diharapkan oleh skip_footer_rows.
@@ -284,22 +284,23 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
     file_name = file_object.name
     try:
         file_object.seek(0)
+        # Gunakan 'latin-1' (atau iso-8859-1) untuk compatibility yang lebih baik
         content = StringIO(file_object.getvalue().decode('latin-1'))
         
-        # 1. Baca semua baris tanpa header/skiprows/skipfooter (untuk menghindari error kolom tidak konsisten)
+        # 1. Baca semua baris tanpa header/skiprows/skipfooter
+        # Kita menggunakan `header=None` agar pandas tidak mencoba menebak kolom/header
         df_full = pd.read_csv(
             content, sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
         )
 
         # Cek jika DataFrame kosong
         if df_full.empty:
-            raise ValueError("File kosong, tidak valid, atau tidak dapat diparse dengan separator yang diberikan (';').")
+            raise ValueError(f"File {file_name} kosong, tidak valid, atau tidak dapat diparse dengan separator yang diberikan (';').")
 
         # Index baris header yang sebenarnya (0-based)
         header_abs_index = skip_header_rows + header_row 
         
         # 2. Hapus footer (jika ada) - DIBUAT LEBIH AMAN
-        actual_skip_footer = skip_footer_rows
         df_temp = df_full.copy()
         
         if skip_footer_rows > 0:
@@ -307,7 +308,6 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
                 # Jika footer yang diskip lebih besar dari panjang file, abaikan skip footer.
                 df_temp = df_full.copy()
                 st.warning(f"⚠️ File **{file_name}** terlalu pendek ({len(df_full)} baris). Parameter `skip_footer_rows` diabaikan untuk menemukan header.")
-                actual_skip_footer = 0
             else:
                 df_temp = df_full.iloc[:-skip_footer_rows].copy()
 
@@ -320,13 +320,27 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
         df_temp.columns = df_temp.iloc[header_abs_index]
         df = df_temp.iloc[header_abs_index + 1:].reset_index(drop=True)
         
-        # *** PERBAIKAN BARU: Cek jika tidak ada baris data yang tersisa ***
+        # *** PERBAIKAN: Jika ada baris yang kosong (all NaN) di kolom data, hapus ***
+        df = df.dropna(axis=0, how='all')
+
         if df.empty:
-             raise ValueError("Tidak ditemukan baris data setelah memproses header. Pastikan file memiliki **baris data** di bawah baris header yang ditargetkan (Baris 5).")
+             raise ValueError("Tidak ditemukan baris data setelah memproses header. Pastikan file memiliki **baris data** di bawah baris header yang ditargetkan.")
         
         # Cleanup
         df.columns = [str(col).strip() if pd.notna(col) else '' for col in df.columns]
-        df = df.dropna(axis=1, how='all').replace({np.nan: ''})
+        df = df.replace({np.nan: ''})
+
+        # --- LOGIKA BARU: Membersihkan kolom kosong yang disebabkan oleh pemisah ganda (;;) ---
+        if aggressive_clean:
+            # Drop kolom yang namanya kosong/NaN DAN isinya juga kosong
+            cols_to_drop = [col for col in df.columns if str(col).strip() == '' and (df[col] == '').all()]
+            if cols_to_drop:
+                 df = df.drop(columns=cols_to_drop, errors='ignore')
+            
+            # Khusus untuk PEI Daily Position: Kolom pertama yang kosong adalah setelah 'Participant Name'
+            # Kita hanya ingin membersihkan kolom yang benar-benar tidak penting
+            df = df.dropna(axis=1, how='all')
+
 
         # --- SLB/PME Specific Logic (If required) ---
         if apply_number_format:
@@ -343,10 +357,11 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
 
             # Pemformatan kolom angka ke format Indonesia
             cols_to_format_indonesian = [col for col in df.columns if
-                                        ('Amount' in str(col) or 'Value' in str(col) or 'Price' in str(col) or 'Borrow' in str(col)) and 'Code' not in str(col)]
+                                        ('Amount' in str(col) or 'Value' in str(col) or 'Price' in str(col) or 'Borrow' in str(col) or 'Shortfall' in str(col) or 'Limit' in str(col) or 'Balance' in str(col)) and 'Code' not in str(col)]
             
             for col_name in cols_to_format_indonesian:
                 if col_name in df.columns:
+                    # Pastikan konversi ke string dilakukan dengan aman, terutama untuk baris 'TOTAL'
                     df.loc[:, col_name] = df[col_name].apply(format_thousand_indonesian)
             
             # Khusus untuk Estimated Period (Days)
@@ -400,7 +415,9 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
         # Ambil semua baris kecuali baris header
         df = df_segment[1:].reset_index(drop=True)
         
-        # *** PERBAIKAN BARU: Cek jika tidak ada baris data yang tersisa ***
+        # *** PERBAIKAN: Jika ada baris yang kosong (all NaN) di kolom data, hapus ***
+        df = df.dropna(axis=0, how='all')
+
         if df.empty:
              raise ValueError(f"Rentang data yang diambil ({start_row}-{end_row}) tidak mengandung baris data setelah header di baris {start_row} digunakan. Pastikan rentang baris sudah benar.")
 
@@ -433,9 +450,10 @@ def generate_table_slb(file_object):
         file_object, 
         header_row=0, 
         skip_header_rows=7, 
-        skip_footer_rows=0, # Diatur 0 karena SLB/PME menggunakan pencarian baris 'TOTAL' sebagai penentu akhir data.
+        skip_footer_rows=0, 
         sep_char=';',
-        apply_number_format=True # Memicu logika pemformatan angka Indonesia
+        apply_number_format=True, # Memicu logika pemformatan angka Indonesia
+        aggressive_clean=False
     )
 
 
@@ -455,16 +473,30 @@ def generate_email_body(email_template, uploaded_files):
     # 2. GENERATE TABEL
 
     # Tabel 1: Posisi Marjin (PEI Daily Position)
-    # Konfigurasi: Header di Baris 5 (skip 4 baris sebelumnya)
+    # Konfigurasi: Header di Baris 5 (skip 4 baris sebelumnya).
+    # skip_footer_rows=3 (untuk mengabaikan 3 baris di akhir file yang berisi info kontak/cetak)
     tabel_posisi_marjin_html = generate_html_table(
-        FILE_1, header_row=0, skip_header_rows=4, skip_footer_rows=3, sep_char=';'
+        FILE_1, 
+        header_row=0, 
+        skip_header_rows=4, 
+        skip_footer_rows=3, 
+        sep_char=';',
+        apply_number_format=True, # Aktifkan pemformatan angka untuk Marjin
+        aggressive_clean=True # Aktifkan pembersihan kolom kosong untuk Marjin (karena ada kolom kosong di header)
     )
     tabel_posisi_marjin_html = "<br>" + tabel_posisi_marjin_html
     
     # Tabel 2: Posisi REPO Normal
-    # Konfigurasi: Header di Baris 17 (skip 16 baris sebelumnya)
+    # Konfigurasi: Header di Baris 17 (skip 16 baris sebelumnya).
+    # skip_footer_rows=6 (asumsi footer 6 baris seperti yang diperbaiki sebelumnya)
     tabel_posisi_repo_html = generate_html_table(
-        FILE_2, header_row=0, skip_header_rows=16, skip_footer_rows=6, sep_char=';'
+        FILE_2, 
+        header_row=0, 
+        skip_header_rows=16, 
+        skip_footer_rows=6, 
+        sep_char=';',
+        apply_number_format=True, # Aktifkan pemformatan angka
+        aggressive_clean=True # Aktifkan pembersihan kolom kosong
     )
     
     # Tabel 3: REPO Restrukturisasi
@@ -485,8 +517,7 @@ def generate_email_body(email_template, uploaded_files):
 
 
     # 3. DATA UNTUK PLACEHOLDER
-    # Catatan: Untuk mendapatkan jumlah_xc_margin_call yang akurat, Anda harus memproses 
-    # DataFrame FILE_1 sebelum diubah menjadi HTML. Angka di bawah ini masih dummy.
+    # Catatan: Ini masih nilai dummy. Untuk perhitungan otomatis, akan memerlukan implementasi ekstra.
     data_harian = {
         'tanggal_laporan': date.today().strftime("%d %B %Y"),
         'jumlah_xc_margin_call': 2, 
@@ -514,7 +545,7 @@ def main():
     st.title("✉️ Generator Body Email Laporan Harian")
     st.markdown("""
     Alat ini menggunakan Streamlit untuk memproses file CSV Anda.
-    **Versi ini sudah ditingkatkan** untuk menangani kasus di mana file CSV yang diunggah kosong atau terlalu pendek.
+    **Versi ini sudah ditingkatkan** untuk menangani masalah **kolom kosong ganda (`;;`)** yang ada di beberapa file.
     """)
     st.markdown("---")
     

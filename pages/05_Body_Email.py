@@ -293,7 +293,7 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
 
         # Cek jika DataFrame kosong
         if df_full.empty:
-            raise ValueError("File kosong atau tidak dapat diparse dengan separator yang diberikan.")
+            raise ValueError("File kosong, tidak valid, atau tidak dapat diparse dengan separator yang diberikan (';').")
 
         # Index baris header yang sebenarnya (0-based)
         header_abs_index = skip_header_rows + header_row 
@@ -313,12 +313,16 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
 
         # 3. Validasi apakah baris header masih ada setelah skip footer
         if len(df_temp) <= header_abs_index:
-             # Jika gagal di sini, kemungkinan besar skip_header_rows yang terlalu besar
-             raise ValueError(f"Jumlah baris yang tersisa ({len(df_temp)}) kurang dari target header (Baris {header_abs_index + 1}). Cek `skip_header_rows` atau pastikan file tidak terlalu pendek.")
+             # Jika gagal di sini, berarti file terlalu pendek dibandingkan dengan `skip_header_rows`
+             raise ValueError(f"Jumlah baris yang tersisa ({len(df_temp)}) kurang dari target header (Baris {header_abs_index + 1} dari awal file). Pastikan file memiliki baris yang cukup atau cek `skip_header_rows`.")
             
         # 4. Tetapkan header dan ambil data
         df_temp.columns = df_temp.iloc[header_abs_index]
         df = df_temp.iloc[header_abs_index + 1:].reset_index(drop=True)
+        
+        # *** PERBAIKAN BARU: Cek jika tidak ada baris data yang tersisa ***
+        if df.empty:
+             raise ValueError("Tidak ditemukan baris data setelah memproses header. Pastikan file memiliki **baris data** di bawah baris header yang ditargetkan (Baris 5).")
         
         # Cleanup
         df.columns = [str(col).strip() if pd.notna(col) else '' for col in df.columns]
@@ -382,7 +386,7 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
 
         # Cek jika DataFrame kosong
         if df_full.empty:
-            raise ValueError("File kosong atau tidak dapat diparse dengan separator yang diberikan.")
+            raise ValueError("File kosong, tidak valid, atau tidak dapat diparse dengan separator yang diberikan (';').")
         
         # Membaca baris dari start_row (1-based) hingga end_row (1-based), inklusif
         # Index Pandas adalah 0-based
@@ -396,6 +400,10 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
         # Ambil semua baris kecuali baris header
         df = df_segment[1:].reset_index(drop=True)
         
+        # *** PERBAIKAN BARU: Cek jika tidak ada baris data yang tersisa ***
+        if df.empty:
+             raise ValueError(f"Rentang data yang diambil ({start_row}-{end_row}) tidak mengandung baris data setelah header di baris {start_row} digunakan. Pastikan rentang baris sudah benar.")
+
         # Cleanup
         df.columns = [str(col).strip() if pd.notna(col) else '' for col in df.columns]
         df = df.dropna(axis=1, how='all').replace({np.nan: ''})
@@ -447,28 +455,32 @@ def generate_email_body(email_template, uploaded_files):
     # 2. GENERATE TABEL
 
     # Tabel 1: Posisi Marjin (PEI Daily Position)
-    # skip_footer_rows=3 sekarang lebih aman karena ada pengecekan di generate_html_table
+    # Konfigurasi: Header di Baris 5 (skip 4 baris sebelumnya)
     tabel_posisi_marjin_html = generate_html_table(
         FILE_1, header_row=0, skip_header_rows=4, skip_footer_rows=3, sep_char=';'
     )
     tabel_posisi_marjin_html = "<br>" + tabel_posisi_marjin_html
     
     # Tabel 2: Posisi REPO Normal
+    # Konfigurasi: Header di Baris 17 (skip 16 baris sebelumnya)
     tabel_posisi_repo_html = generate_html_table(
         FILE_2, header_row=0, skip_header_rows=16, skip_footer_rows=6, sep_char=';'
     )
     
     # Tabel 3: REPO Restrukturisasi
+    # Konfigurasi: Header di Baris 20, data sampai Baris 30 (range 20-30)
     tabel_repo_restrukturisasi_html = generate_html_table_by_row_range(
         FILE_3, start_row=20, end_row=30, sep_char=';'
     )
     
     # Tabel 4: Reverse Repo Bond
+    # Konfigurasi: Header di Baris 11, data sampai Baris 15 (range 11-15)
     tabel_repo_bond_html = generate_html_table_by_row_range(
         FILE_4, start_row=11, end_row=15, sep_char=';'
     )
     
     # Tabel 5: Posisi PME/SLB (Menggunakan fungsi khusus)
+    # Konfigurasi: Header di Baris 8 (skip 7 baris sebelumnya)
     tabel_posisi_pme_html = generate_table_slb(FILE_5)
 
 
@@ -502,7 +514,7 @@ def main():
     st.title("✉️ Generator Body Email Laporan Harian")
     st.markdown("""
     Alat ini menggunakan Streamlit untuk memproses file CSV Anda.
-    **Versi ini sudah ditingkatkan** untuk menangani file CSV yang lebih pendek dari yang diharapkan (mengatasi error `skipfooter`).
+    **Versi ini sudah ditingkatkan** untuk menangani kasus di mana file CSV yang diunggah kosong atau terlalu pendek.
     """)
     st.markdown("---")
     

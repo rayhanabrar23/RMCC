@@ -279,10 +279,7 @@ def merge_total_row_cells(html_table_string):
 def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_rows, sep_char, apply_number_format=False):
     """
     Membaca file CSV/TXT (dari Streamlit File Object) dan mengkonversinya menjadi tabel HTML.
-    Menggunakan logika robust slicing untuk mengatasi error kolom tidak konsisten.
-    
-    header_row: Index baris header di DataFrame (relatif terhadap baris yang diambil setelah skip_header_rows). 
-                Defaultnya 0, karena biasanya baris header adalah baris pertama setelah metadata.
+    Meningkatkan robustness terhadap file yang lebih pendek dari yang diharapkan oleh skip_footer_rows.
     """
     file_name = file_object.name
     try:
@@ -294,19 +291,32 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
             content, sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
         )
 
-        # 2. Hapus footer (jika ada)
-        if skip_footer_rows > 0:
-            df_temp = df_full.iloc[:-skip_footer_rows].copy()
-        else:
-            df_temp = df_full.copy()
-            
-        # Index baris header yang sebenarnya
-        header_abs_index = skip_header_rows + header_row 
+        # Cek jika DataFrame kosong
+        if df_full.empty:
+            raise ValueError("File kosong atau tidak dapat diparse dengan separator yang diberikan.")
 
+        # Index baris header yang sebenarnya (0-based)
+        header_abs_index = skip_header_rows + header_row 
+        
+        # 2. Hapus footer (jika ada) - DIBUAT LEBIH AMAN
+        actual_skip_footer = skip_footer_rows
+        df_temp = df_full.copy()
+        
+        if skip_footer_rows > 0:
+            if skip_footer_rows >= len(df_full):
+                # Jika footer yang diskip lebih besar dari panjang file, abaikan skip footer.
+                df_temp = df_full.copy()
+                st.warning(f"⚠️ File **{file_name}** terlalu pendek ({len(df_full)} baris). Parameter `skip_footer_rows` diabaikan untuk menemukan header.")
+                actual_skip_footer = 0
+            else:
+                df_temp = df_full.iloc[:-skip_footer_rows].copy()
+
+        # 3. Validasi apakah baris header masih ada setelah skip footer
         if len(df_temp) <= header_abs_index:
-             raise ValueError(f"Jumlah baris setelah skipfooter ({len(df_temp)}) kurang dari target header (baris {header_abs_index+1}). Cek parameter skip_header_rows atau skip_footer_rows.")
+             # Jika gagal di sini, kemungkinan besar skip_header_rows yang terlalu besar
+             raise ValueError(f"Jumlah baris yang tersisa ({len(df_temp)}) kurang dari target header (Baris {header_abs_index + 1}). Cek `skip_header_rows` atau pastikan file tidak terlalu pendek.")
             
-        # 3. Tetapkan header dan ambil data
+        # 4. Tetapkan header dan ambil data
         df_temp.columns = df_temp.iloc[header_abs_index]
         df = df_temp.iloc[header_abs_index + 1:].reset_index(drop=True)
         
@@ -318,6 +328,7 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
         if apply_number_format:
             # Filter baris sampai baris TOTAL
             try:
+                # Mencari baris yang mengandung 'TOTAL' atau 'JUMLAH' di kolom pertama (index 0)
                 total_row_index = df[
                     df.iloc[:, 0].astype(str).str.contains('TOTAL|JUMLAH', case=False, na=False)
                 ].index[0]
@@ -368,9 +379,17 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
         df_full = pd.read_csv(
             content, sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
         )
+
+        # Cek jika DataFrame kosong
+        if df_full.empty:
+            raise ValueError("File kosong atau tidak dapat diparse dengan separator yang diberikan.")
         
         # Membaca baris dari start_row (1-based) hingga end_row (1-based), inklusif
+        # Index Pandas adalah 0-based
         df_segment = df_full.iloc[start_row - 1 : end_row].copy()
+
+        if df_segment.empty:
+             raise ValueError(f"Rentang baris {start_row}-{end_row} menghasilkan tabel kosong. Cek rentang baris atau pastikan file memiliki baris yang cukup.")
 
         # Baris pertama (0) dari segment adalah header
         df_segment.columns = df_segment.iloc[0]
@@ -397,15 +416,16 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
 
 
 def generate_table_slb(file_object):
-    """Fungsi khusus untuk Tabel 5 (Posisi PME/SLB), sekarang memanggil generate_html_table dengan format khusus."""
+    """Fungsi khusus untuk Tabel 5 (Posisi PME/SLB), memanggil generate_html_table dengan format khusus."""
     
     # SLB file biasanya memiliki 7 baris metadata (Baris 1-7), dan header di Baris 8.
-    # kita set skip_header_rows=7 dan flag apply_number_format=True
+    # header_row=0 (baris pertama setelah skip)
+    # skip_header_rows=7 (skip 7 baris metadata)
     return generate_html_table(
         file_object, 
         header_row=0, 
         skip_header_rows=7, 
-        skip_footer_rows=0, # Asumsi SLB tidak memiliki footer tetap, hanya baris TOTAL
+        skip_footer_rows=0, # Diatur 0 karena SLB/PME menggunakan pencarian baris 'TOTAL' sebagai penentu akhir data.
         sep_char=';',
         apply_number_format=True # Memicu logika pemformatan angka Indonesia
     )
@@ -427,6 +447,7 @@ def generate_email_body(email_template, uploaded_files):
     # 2. GENERATE TABEL
 
     # Tabel 1: Posisi Marjin (PEI Daily Position)
+    # skip_footer_rows=3 sekarang lebih aman karena ada pengecekan di generate_html_table
     tabel_posisi_marjin_html = generate_html_table(
         FILE_1, header_row=0, skip_header_rows=4, skip_footer_rows=3, sep_char=';'
     )
@@ -447,7 +468,7 @@ def generate_email_body(email_template, uploaded_files):
         FILE_4, start_row=11, end_row=15, sep_char=';'
     )
     
-    # Tabel 5: Posisi PME/SLB (Menggunakan fungsi khusus yang kini lebih sederhana)
+    # Tabel 5: Posisi PME/SLB (Menggunakan fungsi khusus)
     tabel_posisi_pme_html = generate_table_slb(FILE_5)
 
 
@@ -481,7 +502,7 @@ def main():
     st.title("✉️ Generator Body Email Laporan Harian")
     st.markdown("""
     Alat ini menggunakan Streamlit untuk memproses file CSV Anda.
-    **Versi ini sudah ditingkatkan** untuk memastikan semua tabel diparsing dengan logika yang paling robust.
+    **Versi ini sudah ditingkatkan** untuk menangani file CSV yang lebih pendek dari yang diharapkan (mengatasi error `skipfooter`).
     """)
     st.markdown("---")
     

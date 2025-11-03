@@ -216,8 +216,6 @@ def apply_custom_styling(styler):
     return styler
 
 
-# --- FUNGSI RE-IMPLEMENTASI MERGE KOLOM TOTAL DENGAN REGEX ---
-
 def merge_total_row_cells(html_table_string):
     """
     Memodifikasi string HTML tabel untuk menggabungkan sel-sel kosong sebelum sel 'TOTAL'
@@ -282,17 +280,33 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
     Meningkatkan robustness terhadap file yang lebih pendek dari yang diharapkan oleh skip_footer_rows.
     """
     file_name = file_object.name
+    
+    # --- DEBUG START ---
+    st.info(f"DEBUG: Memproses file **{file_name}**. Skip Header: {skip_header_rows}, Skip Footer: {skip_footer_rows}")
+    # --- DEBUG END ---
+
     try:
         file_object.seek(0)
         # Gunakan 'latin-1' (atau iso-8859-1) untuk compatibility yang lebih baik
         content = StringIO(file_object.getvalue().decode('latin-1'))
         
         # 1. Baca semua baris tanpa header/skiprows/skipfooter
-        # Kita menggunakan `header=None` agar pandas tidak mencoba menebak kolom/header
+        content_for_read = content.read()
+        
+        # --- DEBUG START ---
+        if content_for_read:
+            st.info(f"DEBUG: File dibaca. Total baris (approx): {len(content_for_read.splitlines())}. Baris pertama: {content_for_read.splitlines()[0][:50]}...")
+        # --- DEBUG END ---
+        
         df_full = pd.read_csv(
-            content, sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
+            StringIO(content_for_read), sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
         )
-
+        
+        # --- DEBUG START ---
+        st.info(f"DEBUG: Pandas berhasil membaca DataFrame. Shape (sebelum potong): {df_full.shape}. Jumlah Kolom: {len(df_full.columns)}")
+        # --- DEBUG END ---
+        
+        
         # Cek jika DataFrame kosong
         if df_full.empty:
             raise ValueError(f"File {file_name} kosong, tidak valid, atau tidak dapat diparse dengan separator yang diberikan (';').")
@@ -323,6 +337,10 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
         # *** PERBAIKAN: Jika ada baris yang kosong (all NaN) di kolom data, hapus ***
         df = df.dropna(axis=0, how='all')
 
+        # --- DEBUG START ---
+        st.info(f"DEBUG: Shape DataFrame DATA AKHIR (setelah potong header/footer): {df.shape}. Baris Data Ditemukan: {len(df)}")
+        # --- DEBUG END ---
+        
         if df.empty:
              raise ValueError("Tidak ditemukan baris data setelah memproses header. Pastikan file memiliki **baris data** di bawah baris header yang ditargetkan.")
         
@@ -398,6 +416,11 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
         df_full = pd.read_csv(
             content, sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
         )
+        
+        # --- DEBUG START ---
+        st.info(f"DEBUG: Pandas berhasil membaca DataFrame. Shape (Full): {df_full.shape}")
+        # --- DEBUG END ---
+
 
         # Cek jika DataFrame kosong
         if df_full.empty:
@@ -417,6 +440,11 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
         
         # *** PERBAIKAN: Jika ada baris yang kosong (all NaN) di kolom data, hapus ***
         df = df.dropna(axis=0, how='all')
+        
+        # --- DEBUG START ---
+        st.info(f"DEBUG: Shape DataFrame DATA AKHIR (Restrukturisasi): {df.shape}. Baris Data Ditemukan: {len(df)}")
+        # --- DEBUG END ---
+
 
         if df.empty:
              raise ValueError(f"Rentang data yang diambil ({start_row}-{end_row}) tidak mengandung baris data setelah header di baris {start_row} digunakan. Pastikan rentang baris sudah benar.")
@@ -545,7 +573,7 @@ def main():
     st.title("✉️ Generator Body Email Laporan Harian")
     st.markdown("""
     Alat ini menggunakan Streamlit untuk memproses file CSV Anda.
-    **Versi ini sudah ditingkatkan** untuk menangani masalah **kolom kosong ganda (`;;`)** yang ada di beberapa file.
+    **Versi ini sudah ditingkatkan** untuk menangani masalah **kolom kosong ganda (`;;`)** dan dilengkapi dengan **fitur diagnostik** untuk melacak baris data yang hilang.
     """)
     st.markdown("---")
     

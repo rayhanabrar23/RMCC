@@ -94,6 +94,7 @@ def format_thousand_indonesian(x):
             # Format ke string dengan pemisah ribuan/desimal Indonesia
             # Menggunakan f-string formatting dan kemudian mengganti koma/titik
             if num == int(num):
+                # Memastikan tidak ada .0 di belakang angka bulat setelah format
                 formatted = f'{int(num):,}'.replace(',', '_temp_').replace('.', ',').replace('_temp_', '.')
             else:
                 formatted = f'{num:,.2f}'.replace(',', '_temp_').replace('.', ',').replace('_temp_', '.')
@@ -233,7 +234,8 @@ def merge_total_row_cells(html_table_string):
 
         total_index = -1
         for i, content in enumerate(cell_contents):
-            if re.search(r'TOTAL|JUMLAH', content, re.IGNORECASE) and content != '': 
+            # Mencari kata 'TOTAL' atau 'JUMLAH' di awal sel (trim spasi)
+            if re.match(r'(TOTAL|JUMLAH)', content, re.IGNORECASE) and content != '': 
                 total_index = i
                 break
 
@@ -277,12 +279,12 @@ def merge_total_row_cells(html_table_string):
 def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_rows, sep_char, apply_number_format=False, aggressive_clean=False):
     """
     Membaca file CSV/TXT (dari Streamlit File Object) dan mengkonversinya menjadi tabel HTML.
-    Meningkatkan robustness terhadap file yang lebih pendek dari yang diharapkan oleh skip_footer_rows.
+    Perbaikan V5: Menggunakan sep=None untuk auto-detect delimiter yang paling robust.
     """
     file_name = file_object.name
     
     # --- DEBUG START ---
-    st.info(f"DEBUG: Memproses file **{file_name}**. Skip Header: {skip_header_rows}, Skip Footer: {skip_footer_rows}")
+    st.info(f"DEBUG: Memproses file **{file_name}**. Skip Header: {skip_header_rows}, Skip Footer: {skip_footer_rows}. Separator yang Dicoba: Otomatis (None)")
     # --- DEBUG END ---
 
     try:
@@ -295,63 +297,62 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
             st.info(f"DEBUG: File dibaca. Total baris (approx): {len(content_raw.splitlines())}. Baris pertama: {content_raw.splitlines()[0][:50]}...")
         # --- DEBUG END ---
 
-        # 2. LOGIKA BARU: Bersihkan Delimiter Ganda (;;) dan Ganti Newline
-        # Karena adanya isu pembacaan, kita membersihkan string mentah sebelum memasukkannya ke Pandas
-        
-        # Hapus baris metadata awal/akhir jika ada (menggunakan logic yang lebih sederhana untuk membersihkan baris kosong)
+        # 2. Hapus baris kosong di awal/akhir file secara sederhana
         lines = [line for line in content_raw.splitlines() if line.strip() != '']
         content_clean = "\n".join(lines)
         
-        # Mengganti delimiter ganda dengan single delimiter
-        # Ini penting karena Pandas mungkin salah menghitung kolom jika ada ;;
-        while ";;" in content_clean:
-             content_clean = content_clean.replace(";;", ";")
-
         
         # 3. Baca DataFrame dari string yang sudah dibersihkan
+        # CRITICAL FIX: sep=None -> Memicu engine python untuk auto-detect delimiter (comma, semicolon, tab, space)
         df_full = pd.read_csv(
-            StringIO(content_clean), sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
+            StringIO(content_clean), 
+            sep=None, # Menggunakan auto-detection delimiter
+            header=None, 
+            encoding='latin-1', 
+            engine='python', 
+            on_bad_lines='skip'
         )
         
         # --- DEBUG START ---
-        st.info(f"DEBUG: Pandas berhasil membaca DataFrame. Shape (setelah clean delimiter): {df_full.shape}. Jumlah Kolom: {len(df_full.columns)}")
+        st.info(f"DEBUG: Pandas berhasil membaca DataFrame. Shape (setelah auto-detect delimiter): {df_full.shape}. Jumlah Kolom: {len(df_full.columns)}")
         # --- DEBUG END ---
         
         
         # Cek jika DataFrame kosong
         if df_full.empty:
-            raise ValueError(f"File {file_name} kosong, tidak valid, atau tidak dapat diparse dengan separator yang diberikan (';').")
+            raise ValueError(f"File {file_name} kosong, tidak valid, atau tidak dapat diparse. Coba pastikan file menggunakan pemisah standar (koma, titik koma, atau tab).")
 
-        # Index baris header yang sebenarnya (0-based)
-        # Karena kita sudah menghapus baris kosong di awal, kita perlu menyesuaikan target header (Baris 5)
+        # 4. Ambil data dengan menargetkan header
+        df_temp = df_full.copy()
         
         # Mencoba menemukan baris header secara dinamis (mencari 'Participant Code')
         # Jika tidak ditemukan, fallback ke target lama.
         try:
-            # Cari baris yang mengandung 'Participant Code'
+            # Mencari baris yang mengandung 'Code' di kolom pertama/kedua (biasanya Participant Code)
             header_row_index = df_full[
-                df_full.iloc[:, 0].astype(str).str.contains('Participant Code', case=False, na=False)
+                (df_full.iloc[:, 0].astype(str).str.contains('Code', case=False, na=False)) |
+                (df_full.iloc[:, 1].astype(str).str.contains('Code', case=False, na=False))
             ].index[0]
             header_abs_index = header_row_index
         except IndexError:
             # Fallback jika tidak ditemukan
             header_abs_index = skip_header_rows + header_row 
+            
+            # --- DEBUG START ---
+            st.warning(f"DEBUG: Header tidak ditemukan secara dinamis. Fallback ke index: {header_abs_index}")
+            # --- DEBUG END ---
         
         
-        # 2. Hapus footer (jika ada) - DIBUAT LEBIH AMAN
-        df_temp = df_full.copy()
-        
+        # Hapus footer (jika ada) - DIBUAT LEBIH AMAN
         if skip_footer_rows > 0:
-            # Kita menggunakan total baris asli, bukan yang sudah di-cleanup
-            df_temp = df_full.iloc[:-skip_footer_rows].copy()
+            df_temp = df_full.iloc[:len(df_full) - skip_footer_rows].copy()
 
 
-        # 3. Validasi apakah baris header masih ada setelah skip footer
+        # Validasi apakah baris header masih ada setelah skip footer
         if len(df_temp) <= header_abs_index:
-             # Jika gagal di sini, berarti file terlalu pendek dibandingkan dengan `skip_header_rows`
              raise ValueError(f"Jumlah baris yang tersisa ({len(df_temp)}) kurang dari target header (Baris {header_abs_index + 1} dari awal file). Pastikan file memiliki baris yang cukup atau cek `skip_header_rows`.")
             
-        # 4. Tetapkan header dan ambil data
+        # Tetapkan header dan ambil data
         df_temp.columns = df_temp.iloc[header_abs_index]
         df = df_temp.iloc[header_abs_index + 1:].reset_index(drop=True)
         
@@ -428,12 +429,15 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
         
         content_raw = file_object.getvalue().decode('latin-1')
         
-        # Bersihkan Delimiter Ganda (;;)
-        while ";;" in content_raw:
-             content_raw = content_raw.replace(";;", ";")
-        
+        # Baca DataFrame dari string mentah
+        # CRITICAL FIX: sep=None -> Memicu engine python untuk auto-detect delimiter yang paling robust.
         df_full = pd.read_csv(
-            StringIO(content_raw), sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
+            StringIO(content_raw), 
+            sep=None, # Menggunakan auto-detection delimiter
+            header=None, 
+            encoding='latin-1', 
+            engine='python', 
+            on_bad_lines='skip'
         )
         
         # --- DEBUG START ---
@@ -443,7 +447,7 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
 
         # Cek jika DataFrame kosong
         if df_full.empty:
-            raise ValueError("File kosong, tidak valid, atau tidak dapat diparse dengan separator yang diberikan (';').")
+            raise ValueError("File kosong, tidak valid, atau tidak dapat diparse.")
         
         # Membaca baris dari start_row (1-based) hingga end_row (1-based), inklusif
         # Index Pandas adalah 0-based
@@ -592,7 +596,7 @@ def main():
     st.title("✉️ Generator Body Email Laporan Harian")
     st.markdown("""
     Alat ini menggunakan Streamlit untuk memproses file CSV Anda.
-    **Versi ini sudah ditingkatkan** dengan logika pembersihan *delimiter* yang sangat agresif untuk mengatasi masalah pembacaan baris!
+    **Versi ini sudah ditingkatkan** dengan logika pembacaan yang super robust (mampu auto-detect berbagai jenis pemisah/delimiter).
     """)
     st.markdown("---")
     
@@ -619,7 +623,7 @@ def main():
         ]
         
         for name in required_files:
-            file_obj = st.file_uploader(f"Unggah File: **{name}** (Gunakan separator: `;`)", 
+            file_obj = st.file_uploader(f"Unggah File: **{name}** (Gunakan separator: `;` atau `,` akan otomatis dideteksi)", 
                                          type=['csv', 'txt'], key=name)
             if file_obj is not None:
                 uploaded_files_map[name] = file_obj
@@ -634,8 +638,13 @@ def main():
         
         if st.button("🔄 Reset", use_container_width=True):
             for name in required_files:
+                # Menghapus objek file dari session_state jika ada
                 if name in st.session_state:
                     del st.session_state[name]
+                # Menghapus objek file yang diupload (jika disimpan sebagai file-ID)
+                if uploaded_files_map.get(name):
+                    uploaded_files_map[name] = None
+                    
             st.session_state['run_generation'] = False
             st.rerun()
 

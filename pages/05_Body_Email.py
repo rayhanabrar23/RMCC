@@ -197,8 +197,8 @@ def apply_custom_styling(styler):
         'font-size': '8pt',
         'font-family': default_font,
         'border': '1px solid #000', 
-        'text-align': 'center',
-        'vertical-align': 'middle',
+        ('text-align', 'center'),
+        ('vertical-align', 'middle'),
     }, subset=pd.IndexSlice[styler.index, styler.columns])
 
 
@@ -233,36 +233,29 @@ def merge_total_row_cells(html_table_string):
         cell_contents = [re.sub(r'<td[^>]*>(.*?)</td>', r'\1', cell, flags=re.DOTALL).strip() for cell in cells]
 
         total_index = -1
+        # Mencari kata 'TOTAL' atau 'JUMLAH' di kolom manapun
         for i, content in enumerate(cell_contents):
-            # Mencari kata 'TOTAL' atau 'JUMLAH' di awal sel (trim spasi)
-            if re.match(r'(TOTAL|JUMLAH)', content, re.IGNORECASE) and content != '': 
+            if re.match(r'^(TOTAL|JUMLAH)', content, re.IGNORECASE) and content != '': 
                 total_index = i
                 break
 
+        # Logika penggabungan hanya jika 'TOTAL'/'JUMLAH' ada dan bukan di kolom pertama (index 0)
         if total_index > 0:
             cols_to_merge = total_index + 1 
-
-            total_cell = cells[total_index]
-            total_cell_attrs_match = re.search(r'(<td[^>]*>)', total_cell)
+            
+            # Konten sel TOTAL
             merged_cell_content = cell_contents[total_index]
 
+            # Style yang difix untuk baris TOTAL
             fixed_style = f"text-align: center; font-weight: bold; background-color: #d9d9d9; font-size: 8pt; font-family: '{default_font}'; border: 1px solid #000;"
 
-            if total_cell_attrs_match:
-                original_tag = total_cell_attrs_match.group(0).replace('>', '').strip()
-                if 'style=' in original_tag.lower():
-                    new_td_tag = re.sub(r'style="[^"]*"', f'style="{fixed_style}"', original_tag, flags=re.IGNORECASE)
-                else:
-                    new_td_tag = f'{original_tag} style="{fixed_style}"'
-                
-                new_td_tag = new_td_tag + f' colspan="{cols_to_merge}">'
-            else:
-                new_td_tag = f'<td colspan="{cols_to_merge}" style="{fixed_style}">'
+            # Buat tag TD baru yang digabungkan (colspan)
+            new_merged_cell = f'<td colspan="{cols_to_merge}" style="{fixed_style}">{merged_cell_content}</td>'
 
-            new_merged_cell = f'{new_td_tag}{merged_cell_content}</td>'
-
+            # Sisa sel setelah sel TOTAL
             remaining_cells = cells[total_index + 1:]
 
+            # Gabungkan kembali baris
             new_row_content = new_merged_cell + ''.join(remaining_cells)
 
             return f"{tr_open}{new_row_content}{tr_close}"
@@ -279,12 +272,13 @@ def merge_total_row_cells(html_table_string):
 def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_rows, sep_char, apply_number_format=False, aggressive_clean=False):
     """
     Membaca file CSV/TXT (dari Streamlit File Object) dan mengkonversinya menjadi tabel HTML.
-    Perbaikan V5: Menggunakan sep=None untuk auto-detect delimiter yang paling robust.
+    Perbaikan V6: Kembali menggunakan sep=';' untuk stabilitas kolom, dan menggunakan 'Total' 
+    row finding untuk menggantikan skip_footer_rows yang bermasalah.
     """
     file_name = file_object.name
     
     # --- DEBUG START ---
-    st.info(f"DEBUG: Memproses file **{file_name}**. Skip Header: {skip_header_rows}, Skip Footer: {skip_footer_rows}. Separator yang Dicoba: Otomatis (None)")
+    st.info(f"DEBUG: Memproses file **{file_name}**. Skip Header (Metadata): {skip_header_rows}. Separator: '{sep_char}'. Skip Footer: {skip_footer_rows}")
     # --- DEBUG END ---
 
     try:
@@ -292,67 +286,55 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
         # 1. Baca konten mentah
         content_raw = file_object.getvalue().decode('latin-1')
         
-        # --- DEBUG START ---
-        if content_raw:
-            st.info(f"DEBUG: File dibaca. Total baris (approx): {len(content_raw.splitlines())}. Baris pertama: {content_raw.splitlines()[0][:50]}...")
-        # --- DEBUG END ---
-
         # 2. Hapus baris kosong di awal/akhir file secara sederhana
         lines = [line for line in content_raw.splitlines() if line.strip() != '']
         content_clean = "\n".join(lines)
         
-        
         # 3. Baca DataFrame dari string yang sudah dibersihkan
-        # CRITICAL FIX: sep=None -> Memicu engine python untuk auto-detect delimiter (comma, semicolon, tab, space)
+        # CRITICAL FIX: Kembali ke sep=';' untuk menghindari error 2 kolom
         df_full = pd.read_csv(
             StringIO(content_clean), 
-            sep=None, # Menggunakan auto-detection delimiter
+            sep=sep_char, 
             header=None, 
             encoding='latin-1', 
-            engine='python', 
+            engine='python', # Wajib pakai Python engine untuk robust
             on_bad_lines='skip'
         )
         
         # --- DEBUG START ---
-        st.info(f"DEBUG: Pandas berhasil membaca DataFrame. Shape (setelah auto-detect delimiter): {df_full.shape}. Jumlah Kolom: {len(df_full.columns)}")
+        st.info(f"DEBUG: Pandas berhasil membaca DataFrame. Shape (Full): {df_full.shape}. Jumlah Kolom: {len(df_full.columns)}")
         # --- DEBUG END ---
         
         
         # Cek jika DataFrame kosong
         if df_full.empty:
-            raise ValueError(f"File {file_name} kosong, tidak valid, atau tidak dapat diparse. Coba pastikan file menggunakan pemisah standar (koma, titik koma, atau tab).")
+            raise ValueError(f"File {file_name} kosong atau tidak dapat diparse. Pastikan pemisah data adalah '{sep_char}'.")
 
-        # 4. Ambil data dengan menargetkan header
-        df_temp = df_full.copy()
         
-        # Mencoba menemukan baris header secara dinamis (mencari 'Participant Code')
-        # Jika tidak ditemukan, fallback ke target lama.
-        try:
-            # Mencari baris yang mengandung 'Code' di kolom pertama/kedua (biasanya Participant Code)
-            header_row_index = df_full[
-                (df_full.iloc[:, 0].astype(str).str.contains('Code', case=False, na=False)) |
-                (df_full.iloc[:, 1].astype(str).str.contains('Code', case=False, na=False))
-            ].index[0]
-            header_abs_index = header_row_index
-        except IndexError:
-            # Fallback jika tidak ditemukan
-            header_abs_index = skip_header_rows + header_row 
-            
-            # --- DEBUG START ---
-            st.warning(f"DEBUG: Header tidak ditemukan secara dinamis. Fallback ke index: {header_abs_index}")
-            # --- DEBUG END ---
-        
-        
-        # Hapus footer (jika ada) - DIBUAT LEBIH AMAN
+        # 4. Terapkan Skip Footer (hanya jika diaktifkan)
         if skip_footer_rows > 0:
             df_temp = df_full.iloc[:len(df_full) - skip_footer_rows].copy()
-
-
-        # Validasi apakah baris header masih ada setelah skip footer
+            # --- DEBUG START ---
+            st.info(f"DEBUG: Setelah skip footer ({skip_footer_rows}), total baris tersisa: {len(df_temp)}")
+            # --- DEBUG END ---
+        else:
+             df_temp = df_full.copy()
+        
+        
+        # Tentukan posisi header absolut (dari awal file, 0-based index)
+        header_abs_index = skip_header_rows + header_row 
+        
+        # --- Cek Ketersediaan Header ---
         if len(df_temp) <= header_abs_index:
-             raise ValueError(f"Jumlah baris yang tersisa ({len(df_temp)}) kurang dari target header (Baris {header_abs_index + 1} dari awal file). Pastikan file memiliki baris yang cukup atau cek `skip_header_rows`.")
+             # Menampilkan baris tersisa vs baris yang diharapkan (seperti di screenshot error)
+             st.warning(f"File **{file_name}** terlalu pendek ({len(df_temp)} baris). Parameter skip_footer_rows diabaikan untuk menemukan header.")
+             # Jika gagal, coba ambil dari full DF tanpa skip footer
+             df_temp = df_full.copy()
+             
+             if len(df_temp) <= header_abs_index:
+                 raise ValueError(f"Jumlah baris yang tersisa ({len(df_temp)}) kurang dari target header (Baris {header_abs_index + 1} dari awal file). Pastikan file memiliki baris yang cukup.")
             
-        # Tetapkan header dan ambil data
+        # 5. Tetapkan header dan ambil data
         df_temp.columns = df_temp.iloc[header_abs_index]
         df = df_temp.iloc[header_abs_index + 1:].reset_index(drop=True)
         
@@ -360,7 +342,7 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
         df = df.dropna(axis=0, how='all')
 
         # --- DEBUG START ---
-        st.info(f"DEBUG: Shape DataFrame DATA AKHIR (setelah potong header/footer): {df.shape}. Baris Data Ditemukan: {len(df)}")
+        st.info(f"DEBUG: Shape DataFrame DATA AKHIR (setelah potong header): {df.shape}. Baris Data Ditemukan: {len(df)}")
         # --- DEBUG END ---
         
         if df.empty:
@@ -370,23 +352,28 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
         df.columns = [str(col).strip() if pd.notna(col) else '' for col in df.columns]
         df = df.replace({np.nan: ''})
 
-        # --- Membersihkan kolom kosong yang disebabkan oleh pemisah ganda (;;) ---
+        # --- Logika Pemotongan Akhir Data (Mencari Baris 'TOTAL' atau 'JUMLAH') ---
+        # Ini adalah solusi yang lebih stabil daripada skip_footer_rows tetap
+        try:
+            # Mencari baris yang mengandung 'TOTAL' atau 'JUMLAH' di kolom pertama (index 0)
+            # Dilakukan setelah df final dibuat
+            total_row_index = df[
+                df.iloc[:, 0].astype(str).str.contains('TOTAL|JUMLAH', case=False, na=False)
+            ].index[0]
+            # Potong DataFrame hanya sampai baris TOTAL (inklusif)
+            df = df.iloc[:total_row_index + 1].copy()
+            st.info(f"DEBUG: Baris 'TOTAL' ditemukan di index {total_row_index}. DataFrame dipotong sampai baris ini.")
+        except IndexError:
+            # Jika tidak ada baris TOTAL, ambil semua data (OK, karena biasanya hanya terjadi di file restrukturisasi)
+            pass
+
+        # --- Pembersihan kolom kosong yang disebabkan oleh pemisah ganda (;;) ---
         if aggressive_clean:
              df = df.dropna(axis=1, how='all') # Hapus kolom yang isinya kosong semua
 
 
-        # --- SLB/PME Specific Logic (If required) ---
+        # --- Pemformatan Angka Indonesia (Jika required) ---
         if apply_number_format:
-            # Filter baris sampai baris TOTAL
-            try:
-                # Mencari baris yang mengandung 'TOTAL' atau 'JUMLAH' di kolom pertama (index 0)
-                total_row_index = df[
-                    df.iloc[:, 0].astype(str).str.contains('TOTAL|JUMLAH', case=False, na=False)
-                ].index[0]
-                df = df.iloc[:total_row_index + 1].copy()
-            except IndexError:
-                # Jika tidak ada baris TOTAL, ambil semua data
-                pass
 
             # Pemformatan kolom angka ke format Indonesia
             cols_to_format_indonesian = [col for col in df.columns if
@@ -404,7 +391,7 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
                      df.loc[:, last_col_name] = df[last_col_name].apply(
                          lambda x: f"{int(float(x))}" if str(x).strip() != '' and pd.to_numeric(x, errors='coerce') is not None and float(x) == int(float(x)) else x
                      )
-        # --- END SLB/PME Specific Logic ---
+        # --- END Pemformatan Angka ---
 
 
         df = clean_headers(df)
@@ -417,7 +404,7 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
         return html_table
 
     except Exception as e:
-        st.error(f"❌ ERROR saat membuat tabel dari file **{file_name}**. Cek struktur CSV (separator, skiprows, header): {e}")
+        st.error(f"❌ ERROR saat membuat tabel dari file **{file_name}**. Cek struktur CSV (separator='{sep_char}', skiprows='{skip_header_rows}', header='{header_row}'): {e}")
         return f"<p style=\"font-size: 11pt; font-family: Arial, sans-serif;\">❌ ERROR saat membuat tabel. Cek struktur CSV: {e}</p><br><br>"
 
 
@@ -430,10 +417,10 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
         content_raw = file_object.getvalue().decode('latin-1')
         
         # Baca DataFrame dari string mentah
-        # CRITICAL FIX: sep=None -> Memicu engine python untuk auto-detect delimiter yang paling robust.
+        # FIX V6: Kembali ke sep=';'
         df_full = pd.read_csv(
             StringIO(content_raw), 
-            sep=None, # Menggunakan auto-detection delimiter
+            sep=sep_char, 
             header=None, 
             encoding='latin-1', 
             engine='python', 
@@ -447,7 +434,7 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
 
         # Cek jika DataFrame kosong
         if df_full.empty:
-            raise ValueError("File kosong, tidak valid, atau tidak dapat diparse.")
+            raise ValueError("File kosong, tidak valid, atau tidak dapat diparse. Pastikan pemisah data adalah ';'.")
         
         # Membaca baris dari start_row (1-based) hingga end_row (1-based), inklusif
         # Index Pandas adalah 0-based
@@ -497,12 +484,13 @@ def generate_table_slb(file_object):
     # SLB file biasanya memiliki 7 baris metadata (Baris 1-7), dan header di Baris 8.
     # header_row=0 (baris pertama setelah skip)
     # skip_header_rows=7 (skip 7 baris metadata)
+    # skip_footer_rows=0 (mengandalkan 'TOTAL' finder)
     return generate_html_table(
         file_object, 
         header_row=0, 
         skip_header_rows=7, 
         skip_footer_rows=0, 
-        sep_char=';',
+        sep_char=';', # FIX V6: Kembali ke semicolon
         apply_number_format=True, # Memicu logika pemformatan angka Indonesia
         aggressive_clean=False
     )
@@ -525,41 +513,43 @@ def generate_email_body(email_template, uploaded_files):
 
     # Tabel 1: Posisi Marjin (PEI Daily Position)
     # Konfigurasi: Header di Baris 5 (skip 4 baris sebelumnya).
-    # skip_footer_rows=3 (untuk mengabaikan 3 baris di akhir file yang berisi info kontak/cetak)
+    # skip_footer_rows=0 (DIGANTI dengan logika pencarian TOTAL yang lebih aman)
     tabel_posisi_marjin_html = generate_html_table(
         FILE_1, 
         header_row=0, 
         skip_header_rows=4, 
-        skip_footer_rows=3, 
-        sep_char=';',
-        apply_number_format=True, # Aktifkan pemformatan angka untuk Marjin
-        aggressive_clean=True # Aktifkan pembersihan kolom kosong untuk Marjin (karena ada kolom kosong di header)
+        skip_footer_rows=0, # FIX V6: Dibuat 0. Logic 'TOTAL' di dalam fungsi
+        sep_char=';', # FIX V6: Kembali ke semicolon
+        apply_number_format=True, 
+        aggressive_clean=True 
     )
     tabel_posisi_marjin_html = "<br>" + tabel_posisi_marjin_html
     
     # Tabel 2: Posisi REPO Normal
     # Konfigurasi: Header di Baris 17 (skip 16 baris sebelumnya).
-    # skip_footer_rows=6 (asumsi footer 6 baris seperti yang diperbaiki sebelumnya)
+    # skip_footer_rows=0 (DIGANTI dengan logika pencarian TOTAL yang lebih aman)
     tabel_posisi_repo_html = generate_html_table(
         FILE_2, 
         header_row=0, 
         skip_header_rows=16, 
-        skip_footer_rows=6, 
-        sep_char=';',
-        apply_number_format=True, # Aktifkan pemformatan angka
-        aggressive_clean=True # Aktifkan pembersihan kolom kosong
+        skip_footer_rows=0, # FIX V6: Dibuat 0. Logic 'TOTAL' di dalam fungsi
+        sep_char=';', # FIX V6: Kembali ke semicolon
+        apply_number_format=True, 
+        aggressive_clean=True 
     )
     
     # Tabel 3: REPO Restrukturisasi
     # Konfigurasi: Header di Baris 20, data sampai Baris 30 (range 20-30)
+    # Tidak perlu skip_footer_rows, karena sudah dibatasi oleh row range
     tabel_repo_restrukturisasi_html = generate_html_table_by_row_range(
-        FILE_3, start_row=20, end_row=30, sep_char=';'
+        FILE_3, start_row=20, end_row=30, sep_char=';' # FIX V6: Kembali ke semicolon
     )
     
     # Tabel 4: Reverse Repo Bond
     # Konfigurasi: Header di Baris 11, data sampai Baris 15 (range 11-15)
+    # Tidak perlu skip_footer_rows, karena sudah dibatasi oleh row range
     tabel_repo_bond_html = generate_html_table_by_row_range(
-        FILE_4, start_row=11, end_row=15, sep_char=';'
+        FILE_4, start_row=11, end_row=15, sep_char=';' # FIX V6: Kembali ke semicolon
     )
     
     # Tabel 5: Posisi PME/SLB (Menggunakan fungsi khusus)
@@ -596,7 +586,9 @@ def main():
     st.title("✉️ Generator Body Email Laporan Harian")
     st.markdown("""
     Alat ini menggunakan Streamlit untuk memproses file CSV Anda.
-    **Versi ini sudah ditingkatkan** dengan logika pembacaan yang super robust (mampu auto-detect berbagai jenis pemisah/delimiter).
+    **Versi ini sudah ditingkatkan** dengan logika pembacaan yang lebih stabil,
+    kembali menggunakan pemisah **titik koma (`;`)** dan menggunakan deteksi baris **'TOTAL'**
+    untuk memotong data secara aman.
     """)
     st.markdown("---")
     
@@ -623,7 +615,7 @@ def main():
         ]
         
         for name in required_files:
-            file_obj = st.file_uploader(f"Unggah File: **{name}** (Gunakan separator: `;` atau `,` akan otomatis dideteksi)", 
+            file_obj = st.file_uploader(f"Unggah File: **{name}** (Gunakan separator: `;`)", 
                                          type=['csv', 'txt'], key=name)
             if file_obj is not None:
                 uploaded_files_map[name] = file_obj
@@ -637,16 +629,17 @@ def main():
                 st.error("Mohon lengkapi **semua file** dan **template email** sebelum menjalankan.")
         
         if st.button("🔄 Reset", use_container_width=True):
+            # Menghapus file dan state dari sesi
+            st.session_state['run_generation'] = False
+            if 'email_template_area' in st.session_state:
+                del st.session_state['email_template_area']
+            
             for name in required_files:
-                # Menghapus objek file dari session_state jika ada
                 if name in st.session_state:
                     del st.session_state[name]
-                # Menghapus objek file yang diupload (jika disimpan sebagai file-ID)
-                if uploaded_files_map.get(name):
-                    uploaded_files_map[name] = None
                     
-            st.session_state['run_generation'] = False
-            st.rerun()
+            st.experimental_rerun()
+
 
     
     if st.session_state.get('run_generation', False):

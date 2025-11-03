@@ -287,23 +287,34 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
 
     try:
         file_object.seek(0)
-        # Gunakan 'latin-1' (atau iso-8859-1) untuk compatibility yang lebih baik
-        content = StringIO(file_object.getvalue().decode('latin-1'))
-        
-        # 1. Baca semua baris tanpa header/skiprows/skipfooter
-        content_for_read = content.read()
+        # 1. Baca konten mentah
+        content_raw = file_object.getvalue().decode('latin-1')
         
         # --- DEBUG START ---
-        if content_for_read:
-            st.info(f"DEBUG: File dibaca. Total baris (approx): {len(content_for_read.splitlines())}. Baris pertama: {content_for_read.splitlines()[0][:50]}...")
+        if content_raw:
+            st.info(f"DEBUG: File dibaca. Total baris (approx): {len(content_raw.splitlines())}. Baris pertama: {content_raw.splitlines()[0][:50]}...")
         # --- DEBUG END ---
+
+        # 2. LOGIKA BARU: Bersihkan Delimiter Ganda (;;) dan Ganti Newline
+        # Karena adanya isu pembacaan, kita membersihkan string mentah sebelum memasukkannya ke Pandas
         
+        # Hapus baris metadata awal/akhir jika ada (menggunakan logic yang lebih sederhana untuk membersihkan baris kosong)
+        lines = [line for line in content_raw.splitlines() if line.strip() != '']
+        content_clean = "\n".join(lines)
+        
+        # Mengganti delimiter ganda dengan single delimiter
+        # Ini penting karena Pandas mungkin salah menghitung kolom jika ada ;;
+        while ";;" in content_clean:
+             content_clean = content_clean.replace(";;", ";")
+
+        
+        # 3. Baca DataFrame dari string yang sudah dibersihkan
         df_full = pd.read_csv(
-            StringIO(content_for_read), sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
+            StringIO(content_clean), sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
         )
         
         # --- DEBUG START ---
-        st.info(f"DEBUG: Pandas berhasil membaca DataFrame. Shape (sebelum potong): {df_full.shape}. Jumlah Kolom: {len(df_full.columns)}")
+        st.info(f"DEBUG: Pandas berhasil membaca DataFrame. Shape (setelah clean delimiter): {df_full.shape}. Jumlah Kolom: {len(df_full.columns)}")
         # --- DEBUG END ---
         
         
@@ -312,18 +323,28 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
             raise ValueError(f"File {file_name} kosong, tidak valid, atau tidak dapat diparse dengan separator yang diberikan (';').")
 
         # Index baris header yang sebenarnya (0-based)
-        header_abs_index = skip_header_rows + header_row 
+        # Karena kita sudah menghapus baris kosong di awal, kita perlu menyesuaikan target header (Baris 5)
+        
+        # Mencoba menemukan baris header secara dinamis (mencari 'Participant Code')
+        # Jika tidak ditemukan, fallback ke target lama.
+        try:
+            # Cari baris yang mengandung 'Participant Code'
+            header_row_index = df_full[
+                df_full.iloc[:, 0].astype(str).str.contains('Participant Code', case=False, na=False)
+            ].index[0]
+            header_abs_index = header_row_index
+        except IndexError:
+            # Fallback jika tidak ditemukan
+            header_abs_index = skip_header_rows + header_row 
+        
         
         # 2. Hapus footer (jika ada) - DIBUAT LEBIH AMAN
         df_temp = df_full.copy()
         
         if skip_footer_rows > 0:
-            if skip_footer_rows >= len(df_full):
-                # Jika footer yang diskip lebih besar dari panjang file, abaikan skip footer.
-                df_temp = df_full.copy()
-                st.warning(f"⚠️ File **{file_name}** terlalu pendek ({len(df_full)} baris). Parameter `skip_footer_rows` diabaikan untuk menemukan header.")
-            else:
-                df_temp = df_full.iloc[:-skip_footer_rows].copy()
+            # Kita menggunakan total baris asli, bukan yang sudah di-cleanup
+            df_temp = df_full.iloc[:-skip_footer_rows].copy()
+
 
         # 3. Validasi apakah baris header masih ada setelah skip footer
         if len(df_temp) <= header_abs_index:
@@ -348,16 +369,9 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
         df.columns = [str(col).strip() if pd.notna(col) else '' for col in df.columns]
         df = df.replace({np.nan: ''})
 
-        # --- LOGIKA BARU: Membersihkan kolom kosong yang disebabkan oleh pemisah ganda (;;) ---
+        # --- Membersihkan kolom kosong yang disebabkan oleh pemisah ganda (;;) ---
         if aggressive_clean:
-            # Drop kolom yang namanya kosong/NaN DAN isinya juga kosong
-            cols_to_drop = [col for col in df.columns if str(col).strip() == '' and (df[col] == '').all()]
-            if cols_to_drop:
-                 df = df.drop(columns=cols_to_drop, errors='ignore')
-            
-            # Khusus untuk PEI Daily Position: Kolom pertama yang kosong adalah setelah 'Participant Name'
-            # Kita hanya ingin membersihkan kolom yang benar-benar tidak penting
-            df = df.dropna(axis=1, how='all')
+             df = df.dropna(axis=1, how='all') # Hapus kolom yang isinya kosong semua
 
 
         # --- SLB/PME Specific Logic (If required) ---
@@ -411,14 +425,19 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
     file_name = file_object.name
     try:
         file_object.seek(0)
-        content = StringIO(file_object.getvalue().decode('latin-1'))
+        
+        content_raw = file_object.getvalue().decode('latin-1')
+        
+        # Bersihkan Delimiter Ganda (;;)
+        while ";;" in content_raw:
+             content_raw = content_raw.replace(";;", ";")
         
         df_full = pd.read_csv(
-            content, sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
+            StringIO(content_raw), sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
         )
         
         # --- DEBUG START ---
-        st.info(f"DEBUG: Pandas berhasil membaca DataFrame. Shape (Full): {df_full.shape}")
+        st.info(f"DEBUG: Pandas berhasil membaca DataFrame. Shape (Full, Restrukturisasi): {df_full.shape}")
         # --- DEBUG END ---
 
 
@@ -573,7 +592,7 @@ def main():
     st.title("✉️ Generator Body Email Laporan Harian")
     st.markdown("""
     Alat ini menggunakan Streamlit untuk memproses file CSV Anda.
-    **Versi ini sudah ditingkatkan** untuk menangani masalah **kolom kosong ganda (`;;`)** dan dilengkapi dengan **fitur diagnostik** untuk melacak baris data yang hilang.
+    **Versi ini sudah ditingkatkan** dengan logika pembersihan *delimiter* yang sangat agresif untuk mengatasi masalah pembacaan baris!
     """)
     st.markdown("---")
     

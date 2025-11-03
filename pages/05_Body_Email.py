@@ -1,7 +1,8 @@
-import streamlit as st
 import pandas as pd
-from datetime import date
+import csv
 import os
+import streamlit as st
+from datetime import date
 import numpy as np
 import re
 from io import StringIO
@@ -45,7 +46,7 @@ Hormat kami,
 [Nama Departemen Anda]
 """
 
-# --- FUNGSI STYLING HTML (CSS Inline) ---
+# --- FUNGSI STYLING HTML (CSS Inline) & FORMATTING ---
 
 def get_html_style():
     """Mengembalikan tag <style> untuk CSS dasar yang kompatibel dengan email."""
@@ -82,6 +83,24 @@ def get_html_style():
     """
     return css_style
 
+def format_thousand_indonesian(x):
+    """Fungsi pembantu untuk format angka Indonesia (titik sebagai pemisah ribuan, koma sebagai desimal)."""
+    if pd.notna(x) and x != '':
+        try:
+            # Ganti format string agar float dapat dikenali (misal: '1.234,56' -> 1234.56)
+            num_str = str(x).replace('.', '').replace(',', '.') if isinstance(x, str) else str(x)
+            num = float(num_str)
+            
+            # Format ke string dengan pemisah ribuan/desimal Indonesia
+            # Menggunakan f-string formatting dan kemudian mengganti koma/titik
+            if num == int(num):
+                formatted = f'{int(num):,}'.replace(',', '_temp_').replace('.', ',').replace('_temp_', '.')
+            else:
+                formatted = f'{num:,.2f}'.replace(',', '_temp_').replace('.', ',').replace('_temp_', '.')
+            return formatted
+        except (ValueError, TypeError):
+            return x 
+    return x
 
 def clean_headers(df):
     """
@@ -255,16 +274,15 @@ def merge_total_row_cells(html_table_string):
     return modified_html
 
 
-# --- A. FUNGSI GENERATOR TABEL UTAMA (FIXED LOGIC) ---
+# --- A. FUNGSI GENERATOR TABEL UTAMA (ROBUST LOGIC) ---
 
-def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_rows, sep_char):
+def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_rows, sep_char, apply_number_format=False):
     """
-    MEMPERBAIKI: Membaca file CSV/TXT (dari Streamlit File Object) dan mengkonversinya menjadi tabel HTML.
-    Logika slicing disesuaikan untuk mengatasi error kolom tidak konsisten.
+    Membaca file CSV/TXT (dari Streamlit File Object) dan mengkonversinya menjadi tabel HTML.
+    Menggunakan logika robust slicing untuk mengatasi error kolom tidak konsisten.
     
-    header_row: Index baris yang digunakan sebagai header, relatif terhadap skip_header_rows. 
-                Saat ini selalu 0 (mengambil baris pertama setelah semua skip).
-    skip_header_rows: Jumlah baris metadata/judul yang dilewati dari awal file.
+    header_row: Index baris header di DataFrame (relatif terhadap baris yang diambil setelah skip_header_rows). 
+                Defaultnya 0, karena biasanya baris header adalah baris pertama setelah metadata.
     """
     file_name = file_object.name
     try:
@@ -282,24 +300,49 @@ def generate_html_table(file_object, header_row, skip_header_rows, skip_footer_r
         else:
             df_temp = df_full.copy()
             
-        # Index baris header di df_temp: skip_header_rows + header_row
-        # header_abs_index adalah index baris yang benar-benar menjadi header
+        # Index baris header yang sebenarnya
         header_abs_index = skip_header_rows + header_row 
 
         if len(df_temp) <= header_abs_index:
              raise ValueError(f"Jumlah baris setelah skipfooter ({len(df_temp)}) kurang dari target header (baris {header_abs_index+1}). Cek parameter skip_header_rows atau skip_footer_rows.")
             
         # 3. Tetapkan header dan ambil data
-        # Kolom diatur menggunakan baris yang ditentukan sebagai header
         df_temp.columns = df_temp.iloc[header_abs_index]
-        
-        # Data dimulai dari baris setelah header
         df = df_temp.iloc[header_abs_index + 1:].reset_index(drop=True)
         
         # Cleanup
-        # Mengganti header dengan string kosong jika NaN
         df.columns = [str(col).strip() if pd.notna(col) else '' for col in df.columns]
         df = df.dropna(axis=1, how='all').replace({np.nan: ''})
+
+        # --- SLB/PME Specific Logic (If required) ---
+        if apply_number_format:
+            # Filter baris sampai baris TOTAL
+            try:
+                total_row_index = df[
+                    df.iloc[:, 0].astype(str).str.contains('TOTAL|JUMLAH', case=False, na=False)
+                ].index[0]
+                df = df.iloc[:total_row_index + 1].copy()
+            except IndexError:
+                # Jika tidak ada baris TOTAL, ambil semua data
+                pass
+
+            # Pemformatan kolom angka ke format Indonesia
+            cols_to_format_indonesian = [col for col in df.columns if
+                                        ('Amount' in str(col) or 'Value' in str(col) or 'Price' in str(col) or 'Borrow' in str(col)) and 'Code' not in str(col)]
+            
+            for col_name in cols_to_format_indonesian:
+                if col_name in df.columns:
+                    df.loc[:, col_name] = df[col_name].apply(format_thousand_indonesian)
+            
+            # Khusus untuk Estimated Period (Days)
+            last_col_name = df.columns[-1]
+            if last_col_name and 'Estimated Period' in str(last_col_name):
+                 if last_col_name in df.columns:
+                     df.loc[:, last_col_name] = df[last_col_name].apply(
+                         lambda x: f"{int(float(x))}" if str(x).strip() != '' and pd.to_numeric(x, errors='coerce') is not None and float(x) == int(float(x)) else x
+                     )
+        # --- END SLB/PME Specific Logic ---
+
 
         df = clean_headers(df)
         styler = df.style.pipe(apply_custom_styling)
@@ -323,11 +366,10 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
         content = StringIO(file_object.getvalue().decode('latin-1'))
         
         df_full = pd.read_csv(
-            content, sep=sep_char, header=None, encoding='latin-1', engine='python'
+            content, sep=sep_char, header=None, encoding='latin-1', engine='python', on_bad_lines='skip'
         )
         
         # Membaca baris dari start_row (1-based) hingga end_row (1-based), inklusif
-        # Index Pandas adalah 0-based
         df_segment = df_full.iloc[start_row - 1 : end_row].copy()
 
         # Baris pertama (0) dari segment adalah header
@@ -355,75 +397,18 @@ def generate_html_table_by_row_range(file_object, start_row, end_row, sep_char):
 
 
 def generate_table_slb(file_object):
-    """Fungsi khusus untuk Tabel 5 (Posisi PME/SLB)."""
-    file_name = file_object.name
-    try:
-        # Fungsi pembantu untuk format angka Indonesia
-        def format_thousand_indonesian(x):
-            if pd.notna(x) and x != '':
-                try:
-                    num_str = str(x).replace('.', '').replace(',', '.') if isinstance(x, str) else str(x)
-                    num = float(num_str)
-                    
-                    if num == int(num):
-                        formatted = f'{int(num):,}'.replace(',', '_temp_').replace('.', ',').replace('_temp_', '.')
-                    else:
-                        formatted = f'{num:,.2f}'.replace(',', '_temp_').replace('.', ',').replace('_temp_', '.')
-                    return formatted
-                except (ValueError, TypeError):
-                    return x 
-            return x
-
-        file_object.seek(0)
-        content = StringIO(file_object.getvalue().decode('latin-1'))
-        
-        # Menggunakan skiprows dan header di pd.read_csv untuk SLB/PME
-        # Karena ini adalah file SLB, kita asumsikan skip 7 baris metadata, dan header adalah baris ke-8 (index 0 setelah skip)
-        df_slb_full = pd.read_csv(
-            content, sep=';', header=0, skiprows=7, encoding='latin-1', engine='python'
-        )
-        
-        df_slb_full.columns = [str(col).strip() if pd.notna(col) else '' for col in df_slb_full.columns]
-        df_slb_full = df_slb_full.dropna(axis=1, how='all').replace({np.nan: ''})
-        
-        df_slb_data = df_slb_full.copy()
-        
-        # Ambil data sampai baris TOTAL
-        try:
-            total_row_index = df_slb_full[
-                df_slb_full.iloc[:, 0].astype(str).str.contains('TOTAL|JUMLAH', case=False, na=False)
-            ].index[0]
-            df_slb_data = df_slb_full.iloc[:total_row_index + 1].copy()
-        except IndexError:
-            df_slb_data = df_slb_full.copy()
-
-        # Pemformatan kolom angka ke format Indonesia (titik sebagai pemisah ribuan)
-        cols_to_format_indonesian = [col for col in df_slb_data.columns if
-                                     ('Amount' in str(col) or 'Value' in str(col) or 'Price' in str(col) or 'Borrow' in str(col)) and 'Code' not in str(col)]
-        
-        for col_name in cols_to_format_indonesian:
-            # Pastikan kolom tidak hilang setelah pembersihan
-            if col_name in df_slb_data.columns:
-                df_slb_data.loc[:, col_name] = df_slb_data[col_name].apply(format_thousand_indonesian)
-            
-        last_col_name = df_slb_data.columns[-1]
-        if last_col_name and 'Estimated Period' in str(last_col_name):
-            if last_col_name in df_slb_data.columns:
-                df_slb_data.loc[:, last_col_name] = df_slb_data[last_col_name].apply(
-                    lambda x: f"{int(float(x))}" if str(x).strip() != '' and pd.to_numeric(x, errors='coerce') is not None and float(x) == int(float(x)) else x
-                )
-
-        df_slb_data = clean_headers(df_slb_data)
-        styler = df_slb_data.style.pipe(apply_custom_styling)
-        tabel_posisi_pme_html = styler.to_html(index=False, classes='', border=0) + "<br><br>"
-        tabel_posisi_pme_html = merge_total_row_cells(tabel_posisi_pme_html)
-        
-        st.success(f"✅ Tabel PME/SLB dari file **{file_name}** berhasil dibuat.")
-        return tabel_posisi_pme_html
-
-    except Exception as e:
-        st.error(f"❌ ERROR saat membuat tabel PME/SLB dari file **{file_name}**: {e}")
-        return f"<p style=\"font-size: 11pt; font-family: Arial, sans-serif;\">❌ ERROR saat membuat tabel PME. Cek struktur CSV: {e}</p><br><br>"
+    """Fungsi khusus untuk Tabel 5 (Posisi PME/SLB), sekarang memanggil generate_html_table dengan format khusus."""
+    
+    # SLB file biasanya memiliki 7 baris metadata (Baris 1-7), dan header di Baris 8.
+    # kita set skip_header_rows=7 dan flag apply_number_format=True
+    return generate_html_table(
+        file_object, 
+        header_row=0, 
+        skip_header_rows=7, 
+        skip_footer_rows=0, # Asumsi SLB tidak memiliki footer tetap, hanya baris TOTAL
+        sep_char=';',
+        apply_number_format=True # Memicu logika pemformatan angka Indonesia
+    )
 
 
 # --- B. FUNGSI EKSEKUSI DATA DAN TEMPLATE ---
@@ -442,14 +427,12 @@ def generate_email_body(email_template, uploaded_files):
     # 2. GENERATE TABEL
 
     # Tabel 1: Posisi Marjin (PEI Daily Position)
-    # Disesuaikan: skip_header_rows=4 (baris 1-4 adalah metadata, baris 5 adalah header)
     tabel_posisi_marjin_html = generate_html_table(
         FILE_1, header_row=0, skip_header_rows=4, skip_footer_rows=3, sep_char=';'
     )
     tabel_posisi_marjin_html = "<br>" + tabel_posisi_marjin_html
     
     # Tabel 2: Posisi REPO Normal
-    # Catatan: Nilai skip_header_rows=16 dipertahankan, sesuaikan jika masih error
     tabel_posisi_repo_html = generate_html_table(
         FILE_2, header_row=0, skip_header_rows=16, skip_footer_rows=6, sep_char=';'
     )
@@ -464,16 +447,16 @@ def generate_email_body(email_template, uploaded_files):
         FILE_4, start_row=11, end_row=15, sep_char=';'
     )
     
-    # Tabel 5: Posisi PME/SLB
+    # Tabel 5: Posisi PME/SLB (Menggunakan fungsi khusus yang kini lebih sederhana)
     tabel_posisi_pme_html = generate_table_slb(FILE_5)
 
 
     # 3. DATA UNTUK PLACEHOLDER
+    # Catatan: Untuk mendapatkan jumlah_xc_margin_call yang akurat, Anda harus memproses 
+    # DataFrame FILE_1 sebelum diubah menjadi HTML. Angka di bawah ini masih dummy.
     data_harian = {
         'tanggal_laporan': date.today().strftime("%d %B %Y"),
-        # Catatan: Jika ingin menghitung jumlah MC/XC yang akurat, 
-        # Anda perlu memproses DataFrame FILE_1 sebelum diubah menjadi HTML.
-        'jumlah_xc_margin_call': 2, # Angka dummy dari kode lama
+        'jumlah_xc_margin_call': 2, 
         'tabel_posisi_marjin': tabel_posisi_marjin_html,
         'tabel_posisi_repo': tabel_posisi_repo_html,
         'tabel_repo_restrukturisasi': tabel_repo_restrukturisasi_html,
@@ -498,7 +481,7 @@ def main():
     st.title("✉️ Generator Body Email Laporan Harian")
     st.markdown("""
     Alat ini menggunakan Streamlit untuk memproses file CSV Anda.
-    **Versi ini sudah diperbaiki** untuk mengatasi masalah pembacaan kolom yang tidak konsisten (error `Expected X fields...`)
+    **Versi ini sudah ditingkatkan** untuk memastikan semua tabel diparsing dengan logika yang paling robust.
     """)
     st.markdown("---")
     
@@ -526,7 +509,7 @@ def main():
         
         for name in required_files:
             file_obj = st.file_uploader(f"Unggah File: **{name}** (Gunakan separator: `;`)", 
-                                            type=['csv', 'txt'], key=name)
+                                         type=['csv', 'txt'], key=name)
             if file_obj is not None:
                 uploaded_files_map[name] = file_obj
                 

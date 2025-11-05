@@ -97,20 +97,7 @@ def keterangan_uma(uma_date):
         return f"Sesuai Haircut KPEI, mempertimbangkan pengumuman UMA dari BEI tanggal {uma_date.strftime('%d %b %Y')}"
     return "Sesuai Metode Perhitungan"
 
-def apply_conc_limit_keterangan_prioritas_final(row):
-    terkena_listed = pd.notna(row.get(COL_LISTED))
-    terkena_ff = pd.notna(row.get(COL_FF))
-
-    if terkena_listed and terkena_ff:
-        return 'Penyesuaian karena melebihi 5% listed & 20% free float'
-    elif terkena_listed:
-        return 'Penyesuaian karena melebihi 5% listed shares'
-    elif terkena_ff:
-        return 'Penyesuaian karena melebihi 20% free float'
-    elif row.get('SAHAM MARJIN BARU?') == 'YA':
-        return 'Penyesuaian karena saham baru masuk marjin'
-    else:
-        return 'Sesuai metode perhitungan'
+# FUNGSI apply_conc_limit_keterangan_prioritas_final DIHAPUS. Logika dipindah ke calculate_concentration_limit.
 
 # ===============================================================
 # FUNGSI UTAMA UNTUK CONCENTRATION LIMIT (CL)
@@ -127,8 +114,9 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     df['KODE EFEK'] = df['KODE EFEK'].astype(str).str.strip()
     
     # 1. Perhitungan limit marjin
+    df['SAHAM MARJIN BARU?'] = df['SAHAM MARJIN BARU?'].astype(str).str.upper().str.strip()
     df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'] = np.where(
-        df['SAHAM MARJIN BARU?'].str.upper().str.strip() == 'YA',
+        df['SAHAM MARJIN BARU?'] == 'YA',
         df[COL_PERHITUNGAN] * 0.50,
         df[COL_PERHITUNGAN]
     )
@@ -193,20 +181,22 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     # PENTING: Haircut Usulan DITIMPA menjadi 1.0 (100%) karena CL=0
     df.loc[mask_rmcc_nol, HAIRCUT_COL_USULAN] = 1.0 
 
-    # 8. Keterangan Haircut & Concentration Limit (Tetap)
+    # 8. Keterangan Haircut & CONC LIMIT (Keterangan CL diberi placeholder awal)
     df['PERTIMBANGAN DIVISI (HAIRCUT)'] = df['UMA'].apply(keterangan_uma)
-    df['PERTIMBANGAN DIVISI (CONC LIMIT)'] = df.apply(apply_conc_limit_keterangan_prioritas_final, axis=1)
+    df['PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Sesuai metode perhitungan' # Placeholder
 
-    # 9. Prioritas khusus: pemisahan keterangan CL=0
+    # 9. Prioritas KHUSUS: Penentuan Keterangan CL secara terpusat
+
+    # --- Definisikan Semua Masker Pengecualian dan Keterangan CL=0 ---
     mask_emiten = df['KODE EFEK'].isin(KODE_EFEK_KHUSUS)
     mask_nol_final = (df[COL_RMCC] == 0) & (~mask_emiten)
     
-    # 1. Tentukan masker Haircut 100% ASLI (Prioritas TERTINGGI untuk KETERANGAN)
+    # 1. Masker Haircut 100% ASLI (Prioritas TERTINGGI untuk KETERANGAN CL=0)
     mask_hc100_origin = ((df['TEMP_HAIRCUT_VAL_ASLI'].sub(1.0).abs() < TOLERANCE) |
                          (df['TEMP_HAIRCUT_VAL_ASLI'].sub(TARGET_100).abs() < TOLERANCE)) & \
                         mask_nol_final
                         
-    # 2. Tentukan masker CL < 5M (Hanya jika TIDAK terkena HC 100% Asli)
+    # 2. Masker CL < 5M (Hanya jika TIDAK terkena HC 100% Asli)
     mask_lt5m_strict = (
         (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
@@ -214,20 +204,40 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
         (df[COL_FF].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_RMCC].fillna(np.inf) < THRESHOLD_5M)
     ) & mask_nol_final & \
-      (~mask_hc100_origin) # KECUALIKAN jika sudah kena HC 100% Asli
+      (~mask_hc100_origin) 
+      
+    # --- Definisikan Masker Keterangan CL Non-Nol (CL != 0) ---
+    mask_non_nol = (df[COL_RMCC] != 0)
+    mask_marjin_baru = mask_non_nol & (df['SAHAM MARJIN BARU?'] == 'YA')
+    mask_listed_ff_ganda = mask_non_nol & pd.notna(df[COL_LISTED]) & pd.notna(df[COL_FF]) & (~mask_marjin_baru)
+    mask_listed_saja = mask_non_nol & pd.notna(df[COL_LISTED]) & (~mask_marjin_baru) & (~mask_listed_ff_ganda)
+    mask_ff_saja = mask_non_nol & pd.notna(df[COL_FF]) & (~mask_marjin_baru) & (~mask_listed_ff_ganda) & (~mask_listed_saja)
 
+
+    # --- Penerapan Keterangan (Order: HC 100% Dulu, Baru CL < 5M, Baru Non-Nol) ---
     
-    # --- Penerapan Keterangan (Order: HC 100% Dulu, Baru CL < 5M) ---
-    
-    # A. Keterangan HC 100% (Prioritas Tertinggi)
+    # A. CL = 0: HC 100% (Prioritas 1)
     df.loc[mask_hc100_origin, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Haircut PEI 100%'
     
-    # B. Keterangan CL < 5M (Prioritas Kedua)
+    # B. CL = 0: CL < 5M (Prioritas 2)
     df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Batas Konsentrasi < Rp5 Miliar'
-    df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (HAIRCUT)'] = 'Penyesuaian karena Batas Konsentrasi 0'
+    df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (HAIRCUT)'] = 'Penyesuaian karena Batas Konsentrasi 0' # Ganti keterangan HC
     
-    # C. Keterangan Emiten Khusus
+    # C. CL = 0: Emiten Khusus (Prioritas 3)
     df.loc[mask_emiten, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena profil emiten'
+    
+    # D. CL != 0: SAHAM MARJIN BARU (Prioritas 4)
+    df.loc[mask_marjin_baru, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena saham baru masuk marjin'
+    
+    # E. CL != 0: Listed/FF Ganda (Prioritas 5)
+    df.loc[mask_listed_ff_ganda, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 5% listed & 20% free float'
+    
+    # F. CL != 0: Listed Saja (Prioritas 6)
+    df.loc[mask_listed_saja, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 5% listed shares'
+    
+    # G. CL != 0: FF Saja (Prioritas 7)
+    df.loc[mask_ff_saja, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 20% free float'
+    # Sisanya (non-nol yang tidak kena Listed/FF/Marjin) akan tetap 'Sesuai metode perhitungan' dari Langkah 8
 
     df = df.drop(columns=['MIN_CL_OPTION', 'TEMP_HAIRCUT_VAL_ASLI'], errors='ignore')
 
@@ -286,4 +296,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

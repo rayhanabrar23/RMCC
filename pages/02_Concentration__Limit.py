@@ -180,8 +180,8 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     mask_emiten = df['KODE EFEK'].isin(KODE_EFEK_KHUSUS)
     mask_nol_final = (df[COL_RMCC] == 0) & (~mask_emiten)
     
-    # --- MODIFIKASI: Menambahkan pengecekan COL_RMCC < 5M ---
-    # Jika COL_RMCC < 5M (dan CL=0), maka berikan keterangan Batas Konsentrasi < Rp5 Miliar.
+    # --- MODIFIKASI REVISI: Menambahkan pengecekan COL_RMCC < 5M ke dalam pemicu keterangan ---
+    # Ini memastikan keterangan Batas Konsentrasi < 5M diterapkan jika nilai final CL USULAN RMCC = 0
     mask_lt5m_strict = (
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_LISTED].fillna(np.inf) < THRESHOLD_5M) |
@@ -213,7 +213,7 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
 def main():
     st.title("🛡️ Concentration Limit (CL) & Haircut Calculation")
     
-    # --- Membuat Nama File Contoh Dinamis ---
+    # --- Membuat Nama File Contoh Dinamis (Input) ---
     current_month_name = datetime.now().strftime('%B').lower()
     example_filename = f'Pythonab_{current_month_name}.xlsx'
     
@@ -245,12 +245,12 @@ def main():
                 
                 # --- Nama File Output Dinamis ---
                 month_name_lower_output = datetime.now().strftime('%B').lower()
-                dynamic_filename_output = f'clhc_{month_name_lower_output}.xlsx'
+                dynamic_filename_output = f'clhc_{month_name_lower_output}.xlsx' # Format clhc_november.xlsx
                 
                 st.download_button(
                     label="⬇️ Unduh Hasil Concentration Limit",
                     data=output_buffer_cl,
-                    file_name=dynamic_filename_output, # Nama file dinamis
+                    file_name=dynamic_filename_output, 
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
 

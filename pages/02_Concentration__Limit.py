@@ -141,7 +141,10 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     ]
 
     df['MIN_CL_OPTION'] = df[limit_cols_for_min].fillna(np.inf).min(axis=1)
+    
+    # --- REVISI: Tambahkan 'CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU' ke pemicu nol ---
     mask_pemicu_nol = (
+        (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) | # BARIS TAMBAHAN
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_LISTED].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_FF].fillna(np.inf) < THRESHOLD_5M)
@@ -152,6 +155,7 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
         0.0, 
         df['MIN_CL_OPTION']
     )
+    # -------------------------------------------------------------------------------------
 
     # 5. Override emiten khusus (Tetap)
     mask_not_zero = (df[COL_RMCC] != 0.0)
@@ -180,13 +184,13 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     mask_emiten = df['KODE EFEK'].isin(KODE_EFEK_KHUSUS)
     mask_nol_final = (df[COL_RMCC] == 0) & (~mask_emiten)
     
-    # --- MODIFIKASI REVISI: Menambahkan pengecekan COL_RMCC < 5M ke dalam pemicu keterangan ---
-    # Ini memastikan keterangan Batas Konsentrasi < 5M diterapkan jika nilai final CL USULAN RMCC = 0
+    # Tambahkan pengecekan COL_RMCC < 5M (untuk memprioritaskan keterangan CL<5M)
     mask_lt5m_strict = (
+        (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) | # BARIS TAMBAHAN
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_LISTED].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_FF].fillna(np.inf) < THRESHOLD_5M) |
-        (df[COL_RMCC].fillna(np.inf) < THRESHOLD_5M) # Pengecekan COL_RMCC ditambahkan di sini
+        (df[COL_RMCC].fillna(np.inf) < THRESHOLD_5M)
     ) & mask_nol_final
 
     HAIRCUT_COL_USULAN = 'HAIRCUT PEI USULAN DIVISI'

@@ -1,5 +1,3 @@
-# pages/02_Concentration__Limit.py (Halaman CL)
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -211,9 +209,18 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
 
 def main():
     st.title("🛡️ Concentration Limit (CL) & Haircut Calculation")
-    st.markdown("Unggah file sumber data Concentration Limit (`Pythonab.xlsx` atau sejenisnya) untuk menjalankan perhitungan CL.")
-
-    required_file_cl = 'File Sumber Concentration Limit (misal: Pythonab.xlsx)'
+    
+    # --- Membuat Nama File Contoh Dinamis ---
+    # Mendapatkan nama bulan saat ini dalam huruf kecil, misal: 'november'
+    current_month_name = datetime.now().strftime('%B').lower()
+    
+    # Menentukan nama file input contoh yang dinamis
+    example_filename = f'clhc_{current_month_name}.xlsx'
+    
+    st.markdown(f"Unggah file sumber data Concentration Limit (misal: `{example_filename}` atau sejenisnya) untuk menjalankan perhitungan CL.")
+    
+    required_file_cl = f'File Sumber Concentration Limit (misal: {example_filename})'
+    # ---------------------------------------
     
     uploaded_file_cl = st.file_uploader(f"Unggah {required_file_cl}", type=['xlsx'], key='cl_source')
     
@@ -227,7 +234,7 @@ def main():
                     # Panggil fungsi CL
                     df_cl_hasil = calculate_concentration_limit(df_cl_source)
                 
-                st.success("✅ Perhitungan Concentration Limit selesai.")
+                st.success("✅ Perhitungan Concentration Limit selesai. Siap diunduh!")
                 st.subheader("Hasil Concentration Limit (Tabel)")
                 st.dataframe(df_cl_hasil) 
                 
@@ -236,12 +243,14 @@ def main():
                 df_cl_hasil.to_excel(output_buffer_cl, index=False)
                 output_buffer_cl.seek(0)
                 
-                date_str = datetime.now().strftime('%Y%m%d')
-
+                # --- Nama File Output Dinamis (Sesuai permintaan) ---
+                month_name_lower_output = datetime.now().strftime('%B').lower()
+                dynamic_filename_output = f'clhc_{month_name_lower_output}.xlsx'
+                
                 st.download_button(
                     label="⬇️ Unduh Hasil Concentration Limit",
                     data=output_buffer_cl,
-                    file_name=f'CL_Result_{date_str}.xlsx',
+                    file_name=dynamic_filename_output, # Nama file dinamis
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
 
@@ -250,4 +259,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

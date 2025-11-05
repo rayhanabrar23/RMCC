@@ -145,7 +145,7 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
 
     df['MIN_CL_OPTION'] = df[limit_cols_for_min].fillna(np.inf).min(axis=1)
     
-    # Menambahkan CL KARENA SAHAM MARJIN BARU ke pemicu nol
+    # REVISI 1: Menambahkan CL KARENA SAHAM MARJIN BARU ke pemicu nol
     mask_pemicu_nol = (
         (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
@@ -166,7 +166,7 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     # 6. Tambah kolom haircut usulan
     df['HAIRCUT KPEI'] = pd.to_numeric(df['HAIRCUT KPEI'], errors='coerce').fillna(0)
     
-    # --- REVISI: Prioritaskan HAIRCUT KPEI 100% ---
+    # REVISI 2: Prioritaskan HAIRCUT KPEI 100%
     mask_hc_kpei_100 = (df['HAIRCUT KPEI'].sub(TARGET_100).abs() < TOLERANCE) | \
                        (df['HAIRCUT KPEI'].sub(1.0).abs() < TOLERANCE)
                        
@@ -179,7 +179,6 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
             df['HAIRCUT PEI'] # Prioritas 3: Pakai PEI biasa
         )
     )
-    # -------------------------------------------------------------------------------------
 
     # 7. Nolkan CL USULAN RMCC jika haircut awal 100% atau CL perhitungan < 5M
     df = reset_concentration_limit(df)
@@ -197,29 +196,35 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     mask_emiten = df['KODE EFEK'].isin(KODE_EFEK_KHUSUS)
     mask_nol_final = (df[COL_RMCC] == 0) & (~mask_emiten)
     
-    # Logika untuk Batas Konsentrasi < 5M
+    # Konversi Haircut Usulan ke float untuk pengecekan 100%
+    df['TEMP_HAIRCUT_VAL'] = pd.to_numeric(df[HAIRCUT_COL_USULAN], errors='coerce') 
+    
+    # REVISI 3a: Tentukan masker Haircut 100% sebagai prioritas (TANPA PENGECUALIAN APAPUN)
+    mask_hc100_strong = ((df['TEMP_HAIRCUT_VAL'].sub(1.0).abs() < TOLERANCE) |
+                         (df['TEMP_HAIRCUT_VAL'].sub(TARGET_100).abs() < TOLERANCE)) & \
+                        mask_nol_final
+                        
+    # REVISI 3b: Tentukan masker CL < 5M (KECUALIKAN yang sudah kena HC 100%)
     mask_lt5m_strict = (
         (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_LISTED].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_FF].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_RMCC].fillna(np.inf) < THRESHOLD_5M)
-    ) & mask_nol_final
+    ) & mask_nol_final & \
+      (~mask_hc100_strong) # DIUBAH: Dikecualikan jika sudah terkena HC 100%
 
-    HAIRCUT_COL_USULAN = 'HAIRCUT PEI USULAN DIVISI'
     
-    # Konversi Haircut Usulan ke float untuk pengecekan 100%
-    df['TEMP_HAIRCUT_VAL'] = pd.to_numeric(df[HAIRCUT_COL_USULAN], errors='coerce') 
+    # --- Penerapan Keterangan (Order Dibalik: HC 100% Paling Kuat) ---
     
-    # Logika untuk Haircut 100% (berdasarkan nilai 1.0 atau 100.0)
-    mask_hc100_origin = ((df['TEMP_HAIRCUT_VAL'].sub(1.0).abs() < TOLERANCE) |
-                         (df['TEMP_HAIRCUT_VAL'].sub(TARGET_100).abs() < TOLERANCE)) & \
-                        mask_nol_final & \
-                        (~mask_lt5m_strict) 
-
+    # A. Keterangan HC 100% (Prioritas Tertinggi di antara override CL=0)
+    df.loc[mask_hc100_strong, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Haircut PEI 100%'
+    
+    # B. Keterangan CL < 5M (Prioritas Kedua)
     df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Batas Konsentrasi < Rp5 Miliar'
     df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (HAIRCUT)'] = 'Penyesuaian karena Batas Konsentrasi 0'
-    df.loc[mask_hc100_origin, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Haircut PEI 100%'
+    
+    # C. Keterangan Emiten Khusus (Prioritas Paling Rendah di antara override CL=0)
     df.loc[mask_emiten, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena profil emiten'
 
     df = df.drop(columns=['MIN_CL_OPTION', 'TEMP_HAIRCUT_VAL'], errors='ignore')
@@ -265,7 +270,7 @@ def main():
                 
                 # --- Nama File Output Dinamis ---
                 month_name_lower_output = datetime.now().strftime('%B').lower()
-                dynamic_filename_output = f'clhc_{month_name_lower_output}.xlsx' # Format clhc_november.xlsx
+                dynamic_filename_output = f'clhc_{month_name_lower_output}.xlsx' 
                 
                 st.download_button(
                     label="⬇️ Unduh Hasil Concentration Limit",

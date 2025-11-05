@@ -21,6 +21,10 @@ OVERRIDE_MAPPING = {
     'NOBU': 10_000_000_000, 'PTPP': 50_000_000_000, 'SILO': 10_000_000_000
 }
 
+# Nilai dan toleransi untuk pengecekan 100%
+TARGET_100 = 100.0
+TOLERANCE = 1e-6 
+
 # ===============================================================
 # FUNGSI UTILITAS UNTUK CONCENTRATION LIMIT (CL)
 # ===============================================================
@@ -74,9 +78,9 @@ def reset_concentration_limit(
     df_main[conc_calc_col] = pd.to_numeric(df_main[conc_calc_col], errors='coerce')
 
     valid_haircut = df_main[haircut_col].dropna()
-    target_100 = 100.0 if not valid_haircut.empty and valid_haircut.max() > 1 + tolerance else 1.0
+    target_100_reset = 100.0 if not valid_haircut.empty and valid_haircut.max() > 1 + tolerance else 1.0
 
-    mask_haircut_100 = (df_main[haircut_col].sub(target_100).abs() < tolerance)
+    mask_haircut_100 = (df_main[haircut_col].sub(target_100_reset).abs() < tolerance)
     mask_below_threshold = (df_main[conc_calc_col] < threshold_limit)
     mask_final = mask_haircut_100 | mask_below_threshold
 
@@ -118,7 +122,6 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     df = df_cl_source.copy()
     
     if 'KODE EFEK' not in df.columns:
-        # Asumsi KODE EFEK ada di kolom yang bernama 'KODE EFEK' atau kolom pertama
         df = df.rename(columns={df.columns[0]: 'KODE EFEK'})
         
     df['KODE EFEK'] = df['KODE EFEK'].astype(str).str.strip()
@@ -142,9 +145,9 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
 
     df['MIN_CL_OPTION'] = df[limit_cols_for_min].fillna(np.inf).min(axis=1)
     
-    # --- REVISI: Tambahkan 'CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU' ke pemicu nol ---
+    # Menambahkan CL KARENA SAHAM MARJIN BARU ke pemicu nol
     mask_pemicu_nol = (
-        (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) | # BARIS TAMBAHAN
+        (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_LISTED].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_FF].fillna(np.inf) < THRESHOLD_5M)
@@ -155,18 +158,28 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
         0.0, 
         df['MIN_CL_OPTION']
     )
-    # -------------------------------------------------------------------------------------
 
     # 5. Override emiten khusus (Tetap)
     mask_not_zero = (df[COL_RMCC] != 0.0)
     df.loc[mask_not_zero, COL_RMCC] = df.loc[mask_not_zero].apply(override_rmcc_limit, axis=1).round(0)
 
     # 6. Tambah kolom haircut usulan
+    df['HAIRCUT KPEI'] = pd.to_numeric(df['HAIRCUT KPEI'], errors='coerce').fillna(0)
+    
+    # --- REVISI: Prioritaskan HAIRCUT KPEI 100% ---
+    mask_hc_kpei_100 = (df['HAIRCUT KPEI'].sub(TARGET_100).abs() < TOLERANCE) | \
+                       (df['HAIRCUT KPEI'].sub(1.0).abs() < TOLERANCE)
+                       
     df['HAIRCUT PEI USULAN DIVISI'] = np.where(
-        (df['UMA'].fillna('-') != '-') & pd.notna(df['UMA']),
-        df['HAIRCUT KPEI'],
-        df['HAIRCUT PEI']
+        mask_hc_kpei_100, # Prioritas 1: Jika KPEI 100%
+        df['HAIRCUT KPEI'], 
+        np.where(
+            (df['UMA'].fillna('-') != '-') & pd.notna(df['UMA']), # Prioritas 2: Jika ada UMA, pakai KPEI
+            df['HAIRCUT KPEI'],
+            df['HAIRCUT PEI'] # Prioritas 3: Pakai PEI biasa
+        )
     )
+    # -------------------------------------------------------------------------------------
 
     # 7. Nolkan CL USULAN RMCC jika haircut awal 100% atau CL perhitungan < 5M
     df = reset_concentration_limit(df)
@@ -184,9 +197,9 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     mask_emiten = df['KODE EFEK'].isin(KODE_EFEK_KHUSUS)
     mask_nol_final = (df[COL_RMCC] == 0) & (~mask_emiten)
     
-    # Tambahkan pengecekan COL_RMCC < 5M (untuk memprioritaskan keterangan CL<5M)
+    # Logika untuk Batas Konsentrasi < 5M
     mask_lt5m_strict = (
-        (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) | # BARIS TAMBAHAN
+        (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_LISTED].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_FF].fillna(np.inf) < THRESHOLD_5M) |
@@ -194,10 +207,13 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     ) & mask_nol_final
 
     HAIRCUT_COL_USULAN = 'HAIRCUT PEI USULAN DIVISI'
-    tolerance = 1e-6
-    df['TEMP_HAIRCUT_VAL'] = pd.to_numeric(df[HAIRCUT_COL_USULAN], errors='coerce')
-    mask_hc100_origin = ((df['TEMP_HAIRCUT_VAL'].sub(1.0).abs() < tolerance) |
-                         (df['TEMP_HAIRCUT_VAL'].sub(100.0).abs() < tolerance)) & \
+    
+    # Konversi Haircut Usulan ke float untuk pengecekan 100%
+    df['TEMP_HAIRCUT_VAL'] = pd.to_numeric(df[HAIRCUT_COL_USULAN], errors='coerce') 
+    
+    # Logika untuk Haircut 100% (berdasarkan nilai 1.0 atau 100.0)
+    mask_hc100_origin = ((df['TEMP_HAIRCUT_VAL'].sub(1.0).abs() < TOLERANCE) |
+                         (df['TEMP_HAIRCUT_VAL'].sub(TARGET_100).abs() < TOLERANCE)) & \
                         mask_nol_final & \
                         (~mask_lt5m_strict) 
 

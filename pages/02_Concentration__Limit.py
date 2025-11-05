@@ -97,8 +97,6 @@ def keterangan_uma(uma_date):
         return f"Sesuai Haircut KPEI, mempertimbangkan pengumuman UMA dari BEI tanggal {uma_date.strftime('%d %b %Y')}"
     return "Sesuai Metode Perhitungan"
 
-# FUNGSI apply_conc_limit_keterangan_prioritas_final DIHAPUS. Logika dipindah ke calculate_concentration_limit.
-
 # ===============================================================
 # FUNGSI UTAMA UNTUK CONCENTRATION LIMIT (CL)
 # ===============================================================
@@ -191,20 +189,21 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     mask_emiten = df['KODE EFEK'].isin(KODE_EFEK_KHUSUS)
     mask_nol_final = (df[COL_RMCC] == 0) & (~mask_emiten)
     
-    # 1. Masker Haircut 100% ASLI (Prioritas TERTINGGI untuk KETERANGAN CL=0)
-    mask_hc100_origin = ((df['TEMP_HAIRCUT_VAL_ASLI'].sub(1.0).abs() < TOLERANCE) |
-                         (df['TEMP_HAIRCUT_VAL_ASLI'].sub(TARGET_100).abs() < TOLERANCE)) & \
-                        mask_nol_final
-                        
-    # 2. Masker CL < 5M (Hanya jika TIDAK terkena HC 100% Asli)
+    # 1. Masker CL < 5M (Prioritas TERTINGGI untuk KETERANGAN CL=0)
     mask_lt5m_strict = (
         (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_LISTED].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_FF].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_RMCC].fillna(np.inf) < THRESHOLD_5M)
-    ) & mask_nol_final & \
-      (~mask_hc100_origin) 
+    ) & mask_nol_final 
+                        
+    # 2. Masker Haircut 100% ASLI (Hanya jika TIDAK terkena CL < 5M)
+    mask_hc100_origin = ((df['TEMP_HAIRCUT_VAL_ASLI'].sub(1.0).abs() < TOLERANCE) |
+                         (df['TEMP_HAIRCUT_VAL_ASLI'].sub(TARGET_100).abs() < TOLERANCE)) & \
+                        mask_nol_final & \
+                        (~mask_lt5m_strict) # KECUALIKAN jika sudah kena CL < 5M
+
       
     # --- Definisikan Masker Keterangan CL Non-Nol (CL != 0) ---
     mask_non_nol = (df[COL_RMCC] != 0)
@@ -214,14 +213,14 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     mask_ff_saja = mask_non_nol & pd.notna(df[COL_FF]) & (~mask_marjin_baru) & (~mask_listed_ff_ganda) & (~mask_listed_saja)
 
 
-    # --- Penerapan Keterangan (Order: HC 100% Dulu, Baru CL < 5M, Baru Non-Nol) ---
+    # --- Penerapan Keterangan (Order: CL < 5M Dulu, Baru HC 100%, Baru Non-Nol) ---
     
-    # A. CL = 0: HC 100% (Prioritas 1)
-    df.loc[mask_hc100_origin, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Haircut PEI 100%'
-    
-    # B. CL = 0: CL < 5M (Prioritas 2)
+    # A. CL = 0: CL < 5M (Prioritas 1)
     df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Batas Konsentrasi < Rp5 Miliar'
     df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (HAIRCUT)'] = 'Penyesuaian karena Batas Konsentrasi 0' # Ganti keterangan HC
+    
+    # B. CL = 0: HC 100% (Prioritas 2)
+    df.loc[mask_hc100_origin, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Haircut PEI 100%'
     
     # C. CL = 0: Emiten Khusus (Prioritas 3)
     df.loc[mask_emiten, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena profil emiten'

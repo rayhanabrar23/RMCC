@@ -180,10 +180,13 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     mask_emiten = df['KODE EFEK'].isin(KODE_EFEK_KHUSUS)
     mask_nol_final = (df[COL_RMCC] == 0) & (~mask_emiten)
     
+    # --- MODIFIKASI: Menambahkan pengecekan COL_RMCC < 5M ---
+    # Jika COL_RMCC < 5M (dan CL=0), maka berikan keterangan Batas Konsentrasi < Rp5 Miliar.
     mask_lt5m_strict = (
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_LISTED].fillna(np.inf) < THRESHOLD_5M) |
-        (df[COL_FF].fillna(np.inf) < THRESHOLD_5M)
+        (df[COL_FF].fillna(np.inf) < THRESHOLD_5M) |
+        (df[COL_RMCC].fillna(np.inf) < THRESHOLD_5M) # Pengecekan COL_RMCC ditambahkan di sini
     ) & mask_nol_final
 
     HAIRCUT_COL_USULAN = 'HAIRCUT PEI USULAN DIVISI'
@@ -211,11 +214,8 @@ def main():
     st.title("🛡️ Concentration Limit (CL) & Haircut Calculation")
     
     # --- Membuat Nama File Contoh Dinamis ---
-    # Mendapatkan nama bulan saat ini dalam huruf kecil, misal: 'november'
     current_month_name = datetime.now().strftime('%B').lower()
-    
-    # Menentukan nama file input contoh yang dinamis
-    example_filename = f'clhc_{current_month_name}.xlsx'
+    example_filename = f'Pythonab_{current_month_name}.xlsx'
     
     st.markdown(f"Unggah file sumber data Concentration Limit (misal: `{example_filename}` atau sejenisnya) untuk menjalankan perhitungan CL.")
     
@@ -243,7 +243,7 @@ def main():
                 df_cl_hasil.to_excel(output_buffer_cl, index=False)
                 output_buffer_cl.seek(0)
                 
-                # --- Nama File Output Dinamis (Sesuai permintaan) ---
+                # --- Nama File Output Dinamis ---
                 month_name_lower_output = datetime.now().strftime('%B').lower()
                 dynamic_filename_output = f'clhc_{month_name_lower_output}.xlsx'
                 

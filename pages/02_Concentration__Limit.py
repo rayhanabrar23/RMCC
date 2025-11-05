@@ -242,7 +242,7 @@ def main():
     
     # --- Membuat Nama File Contoh Dinamis (Input) ---
     current_month_name = datetime.now().strftime('%B').lower()
-    example_filename = f'Pythonab_{current_month_name}.xlsx'
+    example_filename = f'hcll_{current_month_name}.xlsx'
     
     st.markdown(f"Unggah file sumber data Concentration Limit (misal: `{example_filename}` atau sejenisnya) untuk menjalankan perhitungan CL.")
     
@@ -286,3 +286,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

@@ -145,7 +145,7 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
 
     df['MIN_CL_OPTION'] = df[limit_cols_for_min].fillna(np.inf).min(axis=1)
     
-    # REVISI 1: Menambahkan CL KARENA SAHAM MARJIN BARU ke pemicu nol
+    # Menambahkan CL KARENA SAHAM MARJIN BARU ke pemicu nol
     mask_pemicu_nol = (
         (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
@@ -166,7 +166,7 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     # 6. Tambah kolom haircut usulan
     df['HAIRCUT KPEI'] = pd.to_numeric(df['HAIRCUT KPEI'], errors='coerce').fillna(0)
     
-    # REVISI 2: Prioritaskan HAIRCUT KPEI 100%
+    # Prioritaskan HAIRCUT KPEI 100%
     mask_hc_kpei_100 = (df['HAIRCUT KPEI'].sub(TARGET_100).abs() < TOLERANCE) | \
                        (df['HAIRCUT KPEI'].sub(1.0).abs() < TOLERANCE)
                        
@@ -181,11 +181,17 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     )
 
     # 7. Nolkan CL USULAN RMCC jika haircut awal 100% atau CL perhitungan < 5M
+    # PENTING: Pada titik ini, df['HAIRCUT PEI USULAN DIVISI'] memegang nilai ASLI sebelum dipaksa 100%
     df = reset_concentration_limit(df)
 
     # 7B. SET HAIRCUT JADI 100% KARENA CL=0
     HAIRCUT_COL_USULAN = 'HAIRCUT PEI USULAN DIVISI'
     mask_rmcc_nol = (df[COL_RMCC] == 0)
+    
+    # Simpan nilai ASLI Haircut Usulan sebelum ditimpa
+    df['TEMP_HAIRCUT_VAL_ASLI'] = pd.to_numeric(df[HAIRCUT_COL_USULAN], errors='coerce') 
+    
+    # PENTING: Haircut Usulan DITIMPA menjadi 1.0 (100%) karena CL=0
     df.loc[mask_rmcc_nol, HAIRCUT_COL_USULAN] = 1.0 
 
     # 8. Keterangan Haircut & Concentration Limit (Tetap)
@@ -196,38 +202,35 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     mask_emiten = df['KODE EFEK'].isin(KODE_EFEK_KHUSUS)
     mask_nol_final = (df[COL_RMCC] == 0) & (~mask_emiten)
     
-    # Konversi Haircut Usulan ke float untuk pengecekan 100%
-    df['TEMP_HAIRCUT_VAL'] = pd.to_numeric(df[HAIRCUT_COL_USULAN], errors='coerce') 
-    
-    # REVISI 3a: Tentukan masker Haircut 100% sebagai prioritas (TANPA PENGECUALIAN APAPUN)
-    mask_hc100_strong = ((df['TEMP_HAIRCUT_VAL'].sub(1.0).abs() < TOLERANCE) |
-                         (df['TEMP_HAIRCUT_VAL'].sub(TARGET_100).abs() < TOLERANCE)) & \
-                        mask_nol_final
-                        
-    # REVISI 3b: Tentukan masker CL < 5M (KECUALIKAN yang sudah kena HC 100%)
+    # 1. Tentukan masker CL < 5M (Prioritas TERTINGGI untuk CL=0)
     mask_lt5m_strict = (
         (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_LISTED].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_FF].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_RMCC].fillna(np.inf) < THRESHOLD_5M)
-    ) & mask_nol_final & \
-      (~mask_hc100_strong) # DIUBAH: Dikecualikan jika sudah terkena HC 100%
+    ) & mask_nol_final
+    
+    # 2. Tentukan masker Haircut 100% ASLI (Berlaku hanya jika nilai ASLI sebelum forced 100% adalah 100%)
+    mask_hc100_origin = ((df['TEMP_HAIRCUT_VAL_ASLI'].sub(1.0).abs() < TOLERANCE) |
+                         (df['TEMP_HAIRCUT_VAL_ASLI'].sub(TARGET_100).abs() < TOLERANCE)) & \
+                        mask_nol_final & \
+                        (~mask_lt5m_strict) # Dikecualikan jika sudah kena pemicu < 5M
 
     
-    # --- Penerapan Keterangan (Order Dibalik: HC 100% Paling Kuat) ---
+    # --- Penerapan Keterangan (Order: CL < 5M Dulu, Baru HC 100% ASLI) ---
     
-    # A. Keterangan HC 100% (Prioritas Tertinggi di antara override CL=0)
-    df.loc[mask_hc100_strong, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Haircut PEI 100%'
-    
-    # B. Keterangan CL < 5M (Prioritas Kedua)
+    # A. Keterangan CL < 5M (Prioritas Tertinggi)
     df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Batas Konsentrasi < Rp5 Miliar'
     df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (HAIRCUT)'] = 'Penyesuaian karena Batas Konsentrasi 0'
     
-    # C. Keterangan Emiten Khusus (Prioritas Paling Rendah di antara override CL=0)
+    # B. Keterangan Haircut 100% ASLI (Prioritas Kedua)
+    df.loc[mask_hc100_origin, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Haircut PEI 100%'
+    
+    # C. Keterangan Emiten Khusus
     df.loc[mask_emiten, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena profil emiten'
 
-    df = df.drop(columns=['MIN_CL_OPTION', 'TEMP_HAIRCUT_VAL'], errors='ignore')
+    df = df.drop(columns=['MIN_CL_OPTION', 'TEMP_HAIRCUT_VAL_ASLI'], errors='ignore')
 
     return df
 

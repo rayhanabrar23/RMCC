@@ -149,24 +149,18 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     mask_not_zero = (df[COL_RMCC] != 0.0)
     df.loc[mask_not_zero, COL_RMCC] = df.loc[mask_not_zero].apply(override_rmcc_limit, axis=1).round(0)
 
-    # 6. Tambah kolom haircut usulan
+    # 6. Tambah kolom haircut usulan (REVISI: HC KPEI 100% TIDAK LAGI PENGUNCI MUTLAK)
     df['HAIRCUT KPEI'] = pd.to_numeric(df['HAIRCUT KPEI'], errors='coerce').fillna(0)
     
-    # Prioritaskan HAIRCUT KPEI 100%
-    mask_hc_kpei_100 = (df['HAIRCUT KPEI'].sub(TARGET_100).abs() < TOLERANCE) | \
-                       (df['HAIRCUT KPEI'].sub(1.0).abs() < TOLERANCE)
-                       
+    # Hanya prioritaskan KPEI jika ada UMA. Jika tidak, pakai PEI.
     df['HAIRCUT PEI USULAN DIVISI'] = np.where(
-        mask_hc_kpei_100, # Prioritas 1: Jika KPEI 100%
-        df['HAIRCUT KPEI'], 
-        np.where(
-            (df['UMA'].fillna('-') != '-') & pd.notna(df['UMA']), # Prioritas 2: Jika ada UMA, pakai KPEI
-            df['HAIRCUT KPEI'],
-            df['HAIRCUT PEI'] # Prioritas 3: Pakai PEI biasa
-        )
+        (df['UMA'].fillna('-') != '-') & pd.notna(df['UMA']), # Prioritas 1: Jika ada UMA, pakai KPEI
+        df['HAIRCUT KPEI'],
+        df['HAIRCUT PEI'] # Prioritas 2: Pakai PEI biasa
     )
 
     # 7. Nolkan CL USULAN RMCC jika haircut awal 100% atau CL perhitungan < 5M
+    # Catatan: Haircut Usulan Divisi di sini mungkin *bukan* 100% untuk emiten HC KPEI 100% non-UMA.
     df = reset_concentration_limit(df)
 
     # 7B. SET HAIRCUT JADI 100% KARENA CL=0
@@ -199,6 +193,7 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     ) & mask_nol_final 
                         
     # 2. Masker Haircut 100% ASLI (Hanya jika TIDAK terkena CL < 5M)
+    # Ini mencari emiten yang nilai *asli* haircut usulannya 100% (sebelum Langkah 7B)
     mask_hc100_origin = ((df['TEMP_HAIRCUT_VAL_ASLI'].sub(1.0).abs() < TOLERANCE) |
                          (df['TEMP_HAIRCUT_VAL_ASLI'].sub(TARGET_100).abs() < TOLERANCE)) & \
                         mask_nol_final & \
@@ -220,6 +215,7 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (HAIRCUT)'] = 'Penyesuaian karena Batas Konsentrasi 0' # Ganti keterangan HC
     
     # B. CL = 0: HC 100% (Prioritas 2)
+    # Catatan: HC 100% di sini berarti HC Usulan Divisi sudah 100% *sebelum* CL dinolkan, dan ini karena UMA/KPEI.
     df.loc[mask_hc100_origin, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Haircut PEI 100%'
     
     # C. CL = 0: Emiten Khusus (Prioritas 3)

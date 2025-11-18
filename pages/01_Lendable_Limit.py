@@ -518,7 +518,7 @@ def main():
                 col_down3.download_button(
                     label="⬇️ Unduh LL Eksternal (.xlsx)",
                     data=output_template_buffer_simple,
-                    file_name=f'Lendable Limit Eksternal {date_str}.xlsx',
+                    file_name=f'Lendable Limit_{date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
@@ -529,6 +529,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 

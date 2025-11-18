@@ -218,7 +218,7 @@ def main():
                 st.download_button(
                     label="⬇️ Unduh File Template Repo Hari Ini (.xlsx)",
                     data=output_buffer,
-                    file_name=f'Repo_Daily_Position_Tgl{date_str}.xlsx',
+                    file_name=f'Reverse Repo Bonds Daily Position {date_str}.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 
@@ -231,3 +231,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

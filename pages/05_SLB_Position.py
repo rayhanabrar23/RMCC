@@ -72,11 +72,9 @@ def read_lent_data_from_template(uploaded_file):
         ws = wb.active
         
         data = []
-        # Mulai dari Baris 8 (header) hingga Baris 18 (sebelum Total)
         for r in range(8, 19): 
             row_data = [ws.cell(row=r, column=c).value for c in range(1, 10)]
             
-            # Jika baris pertama kosong atau mengandung teks 'Total', hentikan.
             if row_data[0] is None or (isinstance(row_data[0], str) and 'Total' in row_data[0]):
                 break
             
@@ -86,14 +84,11 @@ def read_lent_data_from_template(uploaded_file):
                 'Borrow Price', 'Borrow Value', 'Status', 'Reimbursement Date', 
                 'Estimated Period (days)']
         
-        # Buat DataFrame
         df = pd.DataFrame(data, columns=cols)
         
-        # Hapus baris header (Baris 8 di Excel) yang ikut terbaca
         if not df.empty and isinstance(df.iloc[0]['Request Date'], str):
              df = df.iloc[1:].copy()
 
-        # Konversi tipe data
         for col in ['Request Date', 'Reimbursement Date']:
              df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
         for col in ['Borrow Amount (shares)', 'Borrow Price', 'Borrow Value']:
@@ -162,7 +157,7 @@ def generate_report_dfs(borrow_df, return_df, report_date):
     
     return lent_df, returned_df_final.reset_index(drop=True)
 
-# --- Fungsi Pembuatan Excel (OpenPyXL, REVISI AKHIR) ---
+# --- Fungsi Pembuatan Excel (OpenPyXL, REVISI AKHIR STYLING) ---
 
 def create_excel_report(template_file, lent_df, returned_df, report_date):
     """Mengisi template Excel dengan strategi append, mempertahankan format, dan menerapkan style baru."""
@@ -176,11 +171,12 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
         return None
 
     # Style baru untuk data
-    NEW_DATA_FONT = Font(name='Calibri', size=9) 
+    NEW_DATA_FONT = Font(name='Roboto Condensed', size=9) 
     THIN_BORDER = Border(left=Side(style='thin'), 
                          right=Side(style='thin'), 
                          top=Side(style='thin'), 
                          bottom=Side(style='thin'))
+    CENTER_ALIGNMENT = Alignment(horizontal='center', vertical='center') # Rata Tengah
 
     # --- KONFIGURASI BARIS UTAMA ---
     START_ROW_LENT_DATA = 8             
@@ -196,21 +192,9 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
     ws['A2'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
     # --- 2. PERGESERAN BARIS LENT ---
-    # Perhitungan data di df Lent tidak termasuk header Lent
-    data_in_df_lent = len(lent_df) - 1 # Jika df Lent dibaca dari template yang sudah menyertakan header
-
-    # Karena fungsi read_lent_data_from_template sudah membuang header, 
-    # kita berasumsi lent_df yang masuk hanya data.
     data_in_df_lent = len(lent_df) 
-    
-    # Data lama yang sudah ada di template adalah 11 baris (Row 8-18)
     old_data_count = ORIGINAL_TOTAL_LENT_ROW - START_ROW_LENT_DATA
-    
-    # Hitung data yang akan ditulis (gabungan data lama + baru)
-    new_data_count = data_in_df_lent 
-    
-    # Data yang akan ditulis di Excel harus 1 baris lebih banyak untuk header Lent di Row 8
-    rows_to_write = new_data_count + 1
+    rows_to_write = data_in_df_lent + 1 # +1 untuk baris header Lent (Row 8)
 
     row_difference = rows_to_write - old_data_count
     
@@ -220,66 +204,57 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
         ws.delete_rows(ORIGINAL_TOTAL_LENT_ROW + row_difference, abs(row_difference))
 
 
-    # --- 3. TULIS ULANG SELURUH DATA LENT (Mulai dari Baris 8) ---
+    # --- 3. TULIS ULANG SELURUH DATA LENT (Mulai dari Baris 9) ---
     
-    # Tulis Header Lent (Row 8) dari df Lent, jika ada.
-    lent_data_with_header = lent_df.copy()
-    # PENTING: Tambahkan baris header placeholder. Asumsi header adalah teks tetap di template.
-    
-    # Data yang ditulis harus dimulai dari Row 9, karena Row 8 adalah Header.
-    # Kita hanya menulis data (lent_df) mulai dari START_ROW_LENT_DATA + 1 (Row 9)
-    
-    # Data Lent yang akan ditulis (tidak termasuk Header)
     data_to_write = dataframe_to_rows(lent_df, header=False, index=False)
     
     for r_idx, row in enumerate(data_to_write):
         row_num = START_ROW_LENT_DATA + 1 + r_idx # Mulai dari Baris 9
         
         for c_idx in range(1, 10):
-            # Pastikan index row di Python tidak melebihi panjang row yang ada
             if c_idx - 1 < len(row):
                  cell = ws.cell(row=row_num, column=c_idx, value=row[c_idx - 1])
             
-            # Terapkan Style Baru
+            # Terapkan Font dan Border
             cell.font = NEW_DATA_FONT
             cell.border = THIN_BORDER
+
+            # Set default alignment to Center (untuk non-numerical: A, B, C, G, H, I)
+            cell.alignment = CENTER_ALIGNMENT 
             
             # Format Angka (Kolom D, E, F)
             if c_idx in [4, 5, 6]:
                 cell.number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
+                # Override: Numerical data should be right-aligned for financial reports
+                cell.alignment = Alignment(horizontal='right', vertical='center')
             
             # Format Tanggal (Kolom A, H)
             if c_idx in [1, 8]:
                 cell.number_format = 'DD-MMM-YY'
 
 
-    # --- 4. PERBARUI BARIS TOTAL LENT (ROW BARU YANG BERGESER) ---
+    # --- 4. PERBARUI BARIS TOTAL LENT ---
     
-    # Baris Total Lent baru = Header (1) + Data Baru (new_data_count) + 1
-    new_total_lent_row = START_ROW_LENT_DATA + new_data_count + 1 
+    new_total_lent_row = START_ROW_LENT_DATA + data_in_df_lent + 1
     
-    # Salin kembali format Total ke baris baru yang bergeser
     for col_idx in range(1, 10):
         source_cell = ws.cell(row=ORIGINAL_TOTAL_LENT_ROW, column=col_idx)
         dest_cell = ws.cell(row=new_total_lent_row, column=col_idx)
         dest_cell._style = source_cell._style 
         
-        if col_idx == 6: # Kolom F: Nilai SUM (REVISI: Pindahkan formula ke Kolom F)
-            # Area SUM: dari START_ROW_LENT_DATA + 1 (Row 9) sampai Row Total baru - 1
+        if col_idx == 6: 
             dest_cell.value = f'=SUM(F{START_ROW_LENT_DATA + 1}:F{new_total_lent_row - 1})'
-        elif col_idx == 1: # Kolom A: Label 'Total'
+        elif col_idx == 1: 
              dest_cell.value = 'Total'
         else:
-            dest_cell.value = None # Kosongkan sel lainnya
+            dest_cell.value = None
 
 
     # --- 5. TULIS DATA RETURNED (TABEL BAWAH) ---
     
-    # Tentukan posisi header Returned yang baru
     NEW_START_ROW_RETURNED_HEADER = new_total_lent_row + ROWS_BETWEEN_TOTAL_LENT_AND_RETURN_HEADER 
     START_ROW_RETURNED_DATA = NEW_START_ROW_RETURNED_HEADER + 2 
 
-    # Hapus baris data lama di area Returned
     ws.delete_rows(START_ROW_RETURNED_DATA, 100) 
     
     new_returned_data_count = len(returned_df)
@@ -293,13 +268,18 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
         for c_idx in range(1, 10):
              cell = ws.cell(row=row_num, column=c_idx, value=row[c_idx - 1])
              
-             # Terapkan Style Baru
+             # Terapkan Font dan Border
              cell.font = NEW_DATA_FONT
              cell.border = THIN_BORDER
 
+             # Set default alignment to Center
+             cell.alignment = CENTER_ALIGNMENT
+             
              # Format Angka (Kolom D, E, F)
              if c_idx in [4, 5, 6]:
                 cell.number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
+                # Override: Numerical data should be right-aligned
+                cell.alignment = Alignment(horizontal='right', vertical='center')
              
              # Format Tanggal (Kolom A, H)
              if c_idx in [1, 8]:
@@ -309,7 +289,6 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
     
     new_total_returned_row = START_ROW_RETURNED_DATA + new_returned_data_count 
     
-    # REVISI: Pindahkan formula SUM ke Kolom F
     ws.cell(row=new_total_returned_row, column=6).value = f'=SUM(F{START_ROW_RETURNED_DATA}:F{new_total_returned_row - 1})'
     ws.cell(row=new_total_returned_row, column=6).font = Font(bold=True)
     ws.cell(row=new_total_returned_row, column=6).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
@@ -317,7 +296,6 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
     ws.cell(row=new_total_returned_row, column=1).value = 'Total'
     ws.cell(row=new_total_returned_row, column=1).font = Font(bold=True)
     
-    # Kosongkan Kolom E dan Kolom G (Total Value: lama)
     ws.cell(row=new_total_returned_row, column=5).value = None
     ws.cell(row=new_total_returned_row, column=7).value = None
 

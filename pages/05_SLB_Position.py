@@ -5,11 +5,11 @@ import io
 import os
 from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Font, Alignment, PatternFill, numbers
-# Pustaka gspread dan oauth2client sudah dihapus.
+from openpyxl.styles import Font, Alignment, PatternFill, numbers, Border, Side
+# Pastikan Anda telah menghapus gspread dan oauth2client dari requirements.txt
 
 # --- Konfigurasi File Lokal ---
-# File ini harus ada di root folder (sejajar dengan pages/)
+# Pastikan file ini ada di root folder dengan header yang benar
 BORROW_FILE = 'borrow_contracts.csv'
 RETURN_FILE = 'return_events.csv'
 
@@ -19,7 +19,6 @@ RETURN_FILE = 'return_events.csv'
 def load_data(file_path):
     """Memuat data dari file CSV lokal atau membuat DataFrame kosong."""
     try:
-        # Baca CSV. Jika ada masalah encoding di lingkungan cloud, bisa dihilangkan.
         df = pd.read_csv(file_path, encoding='utf-8') 
         
         # Konversi tipe data tanggal
@@ -31,10 +30,9 @@ def load_data(file_path):
         # Konversi numerik
         for col in ['Borrow Amount (shares)', 'Borrow Price', 'Return Shares']:
             if col in df.columns:
-                # Handle koma/titik dan konversi
                 df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
 
-        return df.dropna(how='all') # Bersihkan baris yang sepenuhnya kosong
+        return df.dropna(how='all')
     except (FileNotFoundError, pd.errors.EmptyDataError):
         # Jika file tidak ada atau kosong, buat DataFrame kosong dengan header yang sesuai
         if file_path == BORROW_FILE:
@@ -54,34 +52,27 @@ def load_data(file_path):
 def append_and_save(file_path, new_data):
     """Menambahkan data baru, menyimpan kembali ke CSV, dan memperbarui cache."""
     
-    # Ambil DF yang sedang aktif (dari cache)
     df = load_data(file_path)
-        
-    # Tambahkan data baru
     new_df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
     
-    # Simpan kembali ke CSV
     try:
         new_df.to_csv(file_path, index=False, encoding='utf-8')
     except Exception as e:
-        st.error(f"Gagal menyimpan ke file CSV lokal. Pastikan izin penulisan diaktifkan: {e}")
+        st.error(f"Gagal menyimpan ke file CSV lokal. Error: {e}")
         return False
 
-    # Hapus cache agar data terbaru dimuat pada rerun berikutnya
     load_data.clear() 
     return True
         
-# --- Fungsi Logika Pembuatan Laporan (TETAP SAMA) ---
+# --- Fungsi Logika Pembuatan Laporan ---
 
 def generate_report_dfs(borrow_df, return_df, report_date):
     """Memproses data pinjaman dan pengembalian untuk menghasilkan 2 tabel laporan."""
     
     # 1. Proses Data Pinjaman (LENT) - Tabel Atas
     lent_df = borrow_df.copy()
-    
     lent_df['Borrow Value'] = lent_df['Borrow Amount (shares)'] * lent_df['Borrow Price']
     
-    # Pastikan perhitungan tanggal hanya dilakukan pada kolom bertipe date
     lent_df['Request Date'] = pd.to_datetime(lent_df['Request Date'], errors='coerce')
     lent_df['Reimbursement Date'] = pd.to_datetime(lent_df['Reimbursement Date'], errors='coerce')
 
@@ -90,32 +81,33 @@ def generate_report_dfs(borrow_df, return_df, report_date):
     
     lent_df = lent_df[['Request Date', 'Borrower', 'Stock Code', 'Borrow Amount (shares)', 'Borrow Price', 'Borrow Value', 'Status', 'Reimbursement Date', 'Estimated Period (days)']]
     
-    # Konversi kembali kolom tanggal untuk tampilan yang bersih
     lent_df['Request Date'] = lent_df['Request Date'].dt.date
     lent_df['Reimbursement Date'] = lent_df['Reimbursement Date'].dt.date
     
     # 2. Proses Data Pengembalian (RETURNED) - Tabel Bawah
     
-    returned_on_date = return_df[return_df['Actual Return Date'] == report_date].copy()
-
+    returned_on_date = return_df.copy() # Ambil semua riwayat return
+    
     if returned_on_date.empty:
         return lent_df, pd.DataFrame()
 
     returned_on_date['Original Request Date'] = pd.to_datetime(returned_on_date['Original Request Date'], errors='coerce')
     returned_on_date['Actual Return Date'] = pd.to_datetime(returned_on_date['Actual Return Date'], errors='coerce')
 
-    returned_on_date['Estimated Period (days)'] = (
-        returned_on_date['Actual Return Date'] - 
-        returned_on_date['Original Request Date']
-    ).dt.days
-    
-    # Untuk mendapatkan Borrow Price: join ke kontrak terakhir yang cocok
-    merge_cols = ['Stock Code', 'Borrower']
+    # Filter untuk pengembalian yang terjadi sampai tanggal laporan (misalnya hari ini)
+    returned_on_date = returned_on_date[returned_on_date['Actual Return Date'].dt.date <= report_date].copy()
+
+    # Perhitungan periode dan merge Borrow Price
     merged_returns = returned_on_date.merge(
-        borrow_df[['Stock Code', 'Borrower', 'Borrow Price']].drop_duplicates(subset=merge_cols, keep='last'),
-        on=merge_cols, how='left'
+        borrow_df[['Stock Code', 'Borrower', 'Borrow Price']].drop_duplicates(subset=['Stock Code', 'Borrower'], keep='last'),
+        on=['Stock Code', 'Borrower'], how='left'
     )
     
+    merged_returns['Estimated Period (days)'] = (
+        merged_returns['Actual Return Date'] - 
+        merged_returns['Original Request Date']
+    ).dt.days
+
     # Buat DataFrame Returned Final
     returned_df_final = pd.DataFrame({
         'Request Date': merged_returns['Original Request Date'].dt.date,
@@ -128,15 +120,14 @@ def generate_report_dfs(borrow_df, return_df, report_date):
         'Estimated Period (days)': merged_returns['Estimated Period (days)']
     })
 
-    # Hitung Borrow Value setelah mendapatkan Borrow Price
     returned_df_final['Borrow Value'] = returned_df_final['Borrow Amount (shares)'] * returned_df_final['Borrow Price']
     
     return lent_df, returned_df_final.reset_index(drop=True)
 
-# --- Fungsi Pembuatan Excel (OpenPyXL, TETAP SAMA) ---
+# --- Fungsi Pembuatan Excel (OpenPyXL, REVISI FINAL) ---
 
 def create_excel_report(template_file, lent_df, returned_df, report_date):
-    """Mengisi template Excel dengan data pinjaman dan pengembalian."""
+    """Mengisi template Excel dengan strategi append dan mempertahankan format."""
     
     try:
         wb = load_workbook(template_file)
@@ -145,75 +136,131 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
         st.error(f"Gagal memuat template Excel: {e}")
         return None
 
-    # PEMBARUAN HEADER TANGGAL (ROW 2, MERGED A-I)
-    date_str_formatted = report_date.strftime("%d-%b-%Y")
+    # --- KONFIGURASI BARIS UTAMA BERDASARKAN TEMPLATE ANDA ---
+    START_ROW_LENT_DATA = 8             # Data Lent dimulai dari baris 8
+    ORIGINAL_TOTAL_LENT_ROW = 19        # Baris Total Lent di template awal
     
+    # Header Returned di template lama berada 6 baris setelah Baris 19 (yaitu Baris 25)
+    # Total Returned berada 2 baris di bawah header Returned (yaitu Baris 27)
+    
+    # Asumsi: Jarak dari Total Lent ke Header Returned selalu 6 baris
+    
+    # --- 1. PEMBARUAN HEADER TANGGAL (ROW 2) ---
+    date_str_formatted = report_date.strftime("%d-%b-%Y")
     new_header_value = (
         "SLB Daily Position\n"
         f"Daily As of Date: {date_str_formatted} – {date_str_formatted}"
     )
     ws['A2'].value = new_header_value
     ws['A2'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    # --- 2. PERGESERAN BARIS LENT ---
     
-    # BARIS DATA DI MULAI DARI BARIS 8
-    start_row_lent = 8
-    # Hapus baris lama (setelah header tabel LENT)
-    ws.delete_rows(start_row_lent, ws.max_row) 
+    # Hitung data lama yang ada di template (asumsi Baris 8-18)
+    old_data_count = ORIGINAL_TOTAL_LENT_ROW - START_ROW_LENT_DATA
+    new_data_count = len(lent_df)
     
-    # Tulis data LENT
+    row_difference = new_data_count - old_data_count # Berapa baris yang perlu ditambahkan/dihapus
+    
+    # --- Sisipkan/Hapus Baris di atas Baris Total Lent lama (Baris 19) ---
+    if row_difference > 0:
+        ws.insert_rows(ORIGINAL_TOTAL_LENT_ROW, row_difference)
+    elif row_difference < 0:
+        ws.delete_rows(ORIGINAL_TOTAL_LENT_ROW + row_difference, abs(row_difference))
+
+    # --- 3. TULIS ULANG SELURUH DATA LENT (Mulai dari Baris 8) ---
     for r_idx, row in enumerate(dataframe_to_rows(lent_df, header=False, index=False)):
-        ws.append(row)
-
-    # Total LENT
-    new_total_row_lent = start_row_lent + len(lent_df)
-    ws[f'A{new_total_row_lent}'] = 'Total'
-    ws[f'A{new_total_row_lent}'].font = Font(bold=True)
-    ws[f'F{new_total_row_lent}'] = 'Total Value:'
-    ws[f'F{new_total_row_lent}'].font = Font(bold=True)
-    ws[f'G{new_total_row_lent}'] = f'=SUM(G{start_row_lent}:G{new_total_row_lent-1})'
-    ws[f'G{new_total_row_lent}'].font = Font(bold=True)
-    ws[f'G{new_total_row_lent}'].number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
-    
-    # TABEL RETURNED (2 baris setelah total LENT)
-    start_row_returned_header = new_total_row_lent + 2 
-    header_returned = ['Request Date', 'Borrower', 'Stock Code', 'Borrow Amount (shares)', 'Borrow Price', 'Borrow Value', 'Status', 'Reimbursement Date', 'Estimated Period (days)']
-    header_fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
-    for c_idx, title in enumerate(header_returned, start=1):
-        cell = ws.cell(row=start_row_returned_header, column=c_idx, value=title)
-        cell.fill = header_fill
-        cell.font = Font(bold=True)
-    
-    data_row_returned = start_row_returned_header + 1
-    
-    if not returned_df.empty:
-        for r_idx, row in enumerate(dataframe_to_rows(returned_df, header=False, index=False)):
-            # Tulis data pengembalian
-            ws.cell(row=data_row_returned + r_idx, column=1, value=row[0]) 
-            ws.cell(row=data_row_returned + r_idx, column=2, value=row[1]) 
-            ws.cell(row=data_row_returned + r_idx, column=3, value=row[2]) 
-            ws.cell(row=data_row_returned + r_idx, column=4, value=row[3]) 
-            ws.cell(row=data_row_returned + r_idx, column=5, value=row[4]) 
-            ws.cell(row=data_row_returned + r_idx, column=6, value=row[5]) 
-            ws.cell(row=data_row_returned + r_idx, column=7, value=row[6])
-            ws.cell(row=data_row_returned + r_idx, column=8, value=row[7])
-            ws.cell(row=data_row_returned + r_idx, column=9, value=row[8]) 
-            
-            # Format Value cell (Kolom F)
-            ws.cell(row=data_row_returned + r_idx, column=6).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
-            
-        new_total_row_returned = data_row_returned + len(returned_df)
-    else:
-        new_total_row_returned = data_row_returned
+        row_num = START_ROW_LENT_DATA + r_idx
         
-    # Total RETURNED
-    ws.cell(row=new_total_row_returned, column=1).value = 'Total'
-    ws.cell(row=new_total_row_returned, column=1).font = Font(bold=True)
-    ws.cell(row=new_total_row_returned, column=5).value = 'Total Value:'
-    ws.cell(row=new_total_row_returned, column=5).font = Font(bold=True)
-    ws.cell(row=new_total_row_returned, column=6).value = f'=SUM(F{data_row_returned}:F{new_total_row_returned-1})'
-    ws.cell(row=new_total_row_returned, column=6).font = Font(bold=True)
-    ws.cell(row=new_total_row_returned, column=6).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
+        # Tulis Kolom A-I
+        ws.cell(row=row_num, column=1, value=row[0]) # Request Date
+        ws.cell(row=row_num, column=2, value=row[1]) # Borrower
+        ws.cell(row=row_num, column=3, value=row[2]) # Stock Code
+        ws.cell(row=row_num, column=4, value=row[3]) # Borrow Amount
+        ws.cell(row=row_num, column=5, value=row[4]) # Borrow Price
+        ws.cell(row=row_num, column=6, value=row[5]) # Borrow Value
+        ws.cell(row=row_num, column=7, value=row[6]) # Status
+        ws.cell(row=row_num, column=8, value=row[7]) # Reimbursement Date
+        ws.cell(row=row_num, column=9, value=row[8]) # Estimated Period
+        
+        # Format angka (Kolom D, E, F)
+        ws.cell(row=row_num, column=4).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
+        ws.cell(row=row_num, column=5).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
+        ws.cell(row=row_num, column=6).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
 
+    # --- 4. PERBARUI BARIS TOTAL LENT (ROW BARU YANG BERGESER) ---
+    
+    new_total_lent_row = START_ROW_LENT_DATA + new_data_count 
+    
+    # Salin kembali format Total (dari baris Total lama ke baris Total yang bergeser)
+    for col_idx in range(1, 10):
+        source_cell = ws.cell(row=ORIGINAL_TOTAL_LENT_ROW, column=col_idx)
+        dest_cell = ws.cell(row=new_total_lent_row, column=col_idx)
+        dest_cell._style = source_cell._style
+        
+        # Hanya salin nilai jika itu formula atau teks Total
+        if isinstance(source_cell.value, str) and '=' in source_cell.value:
+             # Koreksi formula SUM
+            dest_cell.value = f'=SUM(F{START_ROW_LENT_DATA}:F{new_total_lent_row - 1})'
+        else:
+            dest_cell.value = source_cell.value
+    
+    # Kosongkan baris Total Lent lama jika baris bergeser ke atas
+    if row_difference < 0:
+         for col in range(1, 10):
+            ws.cell(row=ORIGINAL_TOTAL_LENT_ROW + row_difference, column=col).value = None
+
+
+    # --- 5. PERBARUI DATA RETURNED (TABEL BAWAH) ---
+    
+    # Lokasi Header Returned yang baru (asumsi bergeser bersama Total Lent)
+    # Jarak Header Returned (Baris 25) dari Total Lent (Baris 19) adalah 6 baris.
+    NEW_START_ROW_RETURNED_HEADER = new_total_lent_row + 6 
+    
+    # Lokasi Data Returned Baru
+    START_ROW_RETURNED_DATA = NEW_START_ROW_RETURNED_HEADER + 2 
+
+    # Hapus data Returned lama (Asumsi 2 baris data lama dari Baris 27 dan 28)
+    # Kita tidak tahu persis baris mana yang dihapus di template, 
+    # jadi kita akan menghapus 2 baris setelah header returned yang lama.
+    
+    # TEMPORARY FIX: Coba hapus 2 baris di lokasi default Baris 27 (jika belum tergeser)
+    ws.delete_rows(27, 2) 
+
+    # Sisipkan baris baru di lokasi data Returned baru (jika ada data baru)
+    new_returned_data_count = len(returned_df)
+    if new_returned_data_count > 0:
+        ws.insert_rows(START_ROW_RETURNED_DATA, new_returned_data_count)
+        
+    # Tulis data RETURNED baru
+    for r_idx, row in enumerate(dataframe_to_rows(returned_df, header=False, index=False)):
+        row_num = START_ROW_RETURNED_DATA + r_idx
+        
+        # Tulis Kolom A-I
+        ws.cell(row=row_num, column=1, value=row[0]) 
+        ws.cell(row=row_num, column=2, value=row[1]) 
+        ws.cell(row=row_num, column=3, value=row[2]) 
+        ws.cell(row=row_num, column=4, value=row[3]) 
+        ws.cell(row=row_num, column=5, value=row[4]) 
+        ws.cell(row=row_num, column=6, value=row[5]) 
+        ws.cell(row=row_num, column=7, value=row[6])
+        ws.cell(row=row_num, column=8, value=row[7])
+        ws.cell(row=row_num, column=9, value=row[8]) 
+            
+        # Format Value cell (Kolom F)
+        ws.cell(row=row_num, column=6).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
+        
+    # --- 6. PERBARUI BARIS TOTAL RETURNED ---
+    
+    # Hitung lokasi baris Total Returned yang baru
+    new_total_returned_row = START_ROW_RETURNED_DATA + new_returned_data_count 
+    
+    # Perbarui formula SUM (Asumsi Total Value di kolom F)
+    ws.cell(row=new_total_returned_row, column=6).value = f'=SUM(F{START_ROW_RETURNED_DATA}:F{new_total_returned_row - 1})'
+    ws.cell(row=new_total_returned_row, column=6).font = Font(bold=True)
+    ws.cell(row=new_total_returned_row, column=6).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
+
+    # --- SIMPAN DAN KEMBALIKAN FILE ---
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
@@ -226,7 +273,6 @@ st.set_page_config(layout="wide", page_title="SLB Daily Position Generator")
 st.title("📊 SLB Daily Position Automation (CSV DB)")
 
 # --- Pemuatan Data dari CSV ---
-# Data disimpan di st.session_state 
 if 'slb_borrow_df' not in st.session_state:
     st.session_state['slb_borrow_df'] = load_data(BORROW_FILE)
 if 'slb_return_df' not in st.session_state:
@@ -235,7 +281,6 @@ if 'slb_return_df' not in st.session_state:
 borrow_df = st.session_state['slb_borrow_df']
 return_df = st.session_state['slb_return_df']
 
-# ... (sisa kode formulir dan logika download tetap sama, hanya ganti pemanggilan fungsi) ...
 
 # --- Antarmuka Pengguna ---
 
@@ -268,7 +313,6 @@ with col1:
                     'Reimbursement Date': reimburse_date,
                     'Status': 'Lent'
                 }
-                # Panggil fungsi penyimpanan CSV yang baru
                 if append_and_save(BORROW_FILE, new_borrow):
                     st.session_state['slb_borrow_df'] = load_data(BORROW_FILE)
                     st.success("Kontrak Pinjaman Baru berhasil ditambahkan ke CSV lokal!")
@@ -282,7 +326,6 @@ with col2:
     with st.form("return_form", clear_on_submit=True):
         actual_return_date = st.date_input("Actual Return Date (Tanggal Keluar)", date.today())
         
-        # Opsi dropdown saham diambil dari kontrak aktif
         active_contracts = borrow_df.copy()
         if not active_contracts.empty:
             active_contracts['Contract Key'] = active_contracts['Stock Code'] + ' | ' + active_contracts['Borrower']
@@ -304,7 +347,6 @@ with col2:
                     st.error("Format kontrak tidak valid.")
                     st.stop()
                 
-                # Cari Request Date asli (gunakan kontrak terakhir yang cocok untuk menyederhanakan)
                 original_contract = borrow_df[
                     (borrow_df['Stock Code'] == stock_code) & 
                     (borrow_df['Borrower'] == borrower_name)
@@ -314,7 +356,6 @@ with col2:
                     st.error("Kontrak asli tidak ditemukan.")
                     st.stop()
                     
-                # Ambil data kontrak terakhir yang cocok
                 original_contract = original_contract.sort_values(by='Reimbursement Date', ascending=False).iloc[0]
 
                 new_return = {
@@ -325,7 +366,6 @@ with col2:
                     'Actual Return Date': actual_return_date
                 }
                 
-                # Panggil fungsi penyimpanan CSV yang baru
                 if append_and_save(RETURN_FILE, new_return):
                     st.session_state['slb_return_df'] = load_data(RETURN_FILE)
                     st.success(f"Event Pengembalian untuk {stock_code} berhasil ditambahkan ke CSV lokal!")
@@ -339,13 +379,10 @@ st.markdown("---")
 if uploaded_file is not None:
     st.header("3. Hasil Laporan dan Download")
     
-    # Ambil posisi terakhir (Lent & Returned pada tanggal laporan)
     final_lent_df, final_returned_df = generate_report_dfs(st.session_state['slb_borrow_df'], st.session_state['slb_return_df'], report_date)
     
-    # Reset pointer file sebelum diproses OpenPyXL
     uploaded_file.seek(0)
     
-    # Generate Excel dan Download
     excel_report = create_excel_report(uploaded_file, final_lent_df, final_returned_df, report_date)
 
     if excel_report:

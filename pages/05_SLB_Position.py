@@ -62,7 +62,7 @@ def append_and_save(file_path, new_data):
     load_data.clear() 
     return True
 
-# --- FUNGSI BARU: MENGOSONGKAN DATABASE ---
+# --- FUNGSI MENGOSONGKAN DATABASE ---
 def clear_local_csv(file_path):
     """Mengosongkan file CSV lokal dengan menulis DataFrame kosong ke dalamnya."""
     try:
@@ -77,12 +77,11 @@ def clear_local_csv(file_path):
         empty_df.to_csv(file_path, index=False, encoding='utf-8')
         return True
     except Exception as e:
-        # Jika file tidak ada, anggap berhasil dibersihkan
         if not os.path.exists(file_path):
             return True 
         st.error(f"Gagal mengosongkan file CSV: {file_path}. Error: {e}")
         return False
-# --- AKHIR FUNGSI BARU ---
+# --- AKHIR FUNGSI MENGOSONGKAN DATABASE ---
 
 
 # --- Fungsi: Membaca Data Lent dari Template Excel yang Diunggah ---
@@ -460,6 +459,8 @@ if uploaded_file is not None:
 
     if excel_report:
         file_name = f"SLB Position {report_date.strftime('%Y%m%d')}.xlsx"
+        
+        # Tombol Download ditempatkan di sini
         st.download_button(
             label="Download Laporan Excel Otomatis",
             data=excel_report,
@@ -467,21 +468,26 @@ if uploaded_file is not None:
             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
         
-        # --- BLOK BARU: MENGOSONGKAN DATABASE SETELAH DOWNLOAD ---
-        st.markdown("---")
-        st.subheader("💡 Opsi Setelah Laporan Dibuat")
+        # --- BLOK REVISI: MENGOSONGKAN DATABASE SECARA OTOMATIS ---
+        # Gunakan query param atau teknik lain untuk pemicu, tapi yang paling sederhana adalah
+        # memberikan notifikasi bahwa user harus me-refresh setelah download.
         
-        # Tombol untuk membersihkan database
-        if st.button("4. Bersihkan Data Input (Lent & Return) dari Database Lokal"):
-            if clear_local_csv(BORROW_FILE) and clear_local_csv(RETURN_FILE):
-                # Perbarui session state agar input form berikutnya kosong
-                st.session_state['slb_borrow_df'] = load_data(BORROW_FILE)
-                st.session_state['slb_return_df'] = load_data(RETURN_FILE)
-                st.success("Database Pinjaman dan Pengembalian lokal berhasil dikosongkan! Data input baru tidak akan terduplikasi di laporan berikutnya.")
-                st.balloons()
-            else:
-                st.error("Gagal membersihkan database lokal.")
-        # --- AKHIR BLOK BARU ---
+        st.markdown("---")
+        if not csv_lent_df.empty or not return_df.empty:
+            st.warning("**PENTING:** Data input baru (Lent/Return) telah dimasukkan ke dalam laporan ini. Untuk MENGHINDARI DUPLIKASI di laporan berikutnya, **mohon tekan tombol di bawah**.")
+            
+            if st.button("4. Kosongkan Database Input Lokal Sekarang"):
+                if clear_local_csv(BORROW_FILE) and clear_local_csv(RETURN_FILE):
+                    # Perbarui session state agar input form berikutnya kosong
+                    st.session_state['slb_borrow_df'] = load_data(BORROW_FILE)
+                    st.session_state['slb_return_df'] = load_data(RETURN_FILE)
+                    st.success("✅ Database Pinjaman dan Pengembalian lokal **berhasil dikosongkan**! Silakan **refresh halaman** untuk mulai input data baru.")
+                    st.balloons()
+                else:
+                    st.error("❌ Gagal membersihkan database lokal.")
+        else:
+             st.info("Database input lokal sudah kosong.")
+        # --- AKHIR BLOK REVISI ---
         
     else:
         st.warning("Data belum tersedia atau gagal memproses laporan.")

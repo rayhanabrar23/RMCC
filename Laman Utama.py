@@ -22,9 +22,11 @@ def main():
     - **Lendable Limit (LL):** Untuk menghitung posisi Lendable Limit.
     - **Concentration Limit (CL):** Untuk menghitung Batas Konsentrasi dan Haircut.
     - **UMA Scraper:** Untuk mengambil data Unusual Market Activity dari IDX.
+    - **Repo Daily Position:** Untuk menghitung data Laporan Harian yang dikirim oleh PHEI.
 
     _Setiap halaman LL & CL memerlukan set file input yang berbeda._
     """)
 
 if __name__ == '__main__':
     main()
+

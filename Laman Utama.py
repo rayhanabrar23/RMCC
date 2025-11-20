@@ -13,9 +13,9 @@ def main():
     st.logo(logo_url, icon_image=None) 
     
     # Konten halaman utama Anda
-    st.title("📊 LL & CL Report Generator Dashboard")
+    st.title("RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD")
     st.markdown("""
-    Selamat datang! Aplikasi ini telah dibagi menjadi tiga halaman (aplikasi) terpisah yang dapat Anda akses melalui **menu navigasi di sebelah kiri** (ikon **>**).
+    Selamat datang! Aplikasi ini telah dibagi menjadi empat halaman (aplikasi) terpisah yang dapat Anda akses melalui **menu navigasi di sebelah kiri** (ikon **>**).
 
     Pilih halaman:
     
@@ -29,4 +29,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 

@@ -3,7 +3,6 @@ pandas
 numpy
 openpyxl
 reportlab
-gspread
-oauth2client
+
 
 

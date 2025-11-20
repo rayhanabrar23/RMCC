@@ -62,6 +62,29 @@ def append_and_save(file_path, new_data):
     load_data.clear() 
     return True
 
+# --- FUNGSI BARU: MENGOSONGKAN DATABASE ---
+def clear_local_csv(file_path):
+    """Mengosongkan file CSV lokal dengan menulis DataFrame kosong ke dalamnya."""
+    try:
+        if file_path == BORROW_FILE:
+            cols = ['Request Date', 'Borrower', 'Stock Code', 'Borrow Amount (shares)', 'Borrow Price', 'Reimbursement Date', 'Status']
+        elif file_path == RETURN_FILE:
+            cols = ['Original Request Date', 'Borrower', 'Stock Code', 'Return Shares', 'Actual Return Date']
+        else:
+            cols = []
+            
+        empty_df = pd.DataFrame(columns=cols)
+        empty_df.to_csv(file_path, index=False, encoding='utf-8')
+        return True
+    except Exception as e:
+        # Jika file tidak ada, anggap berhasil dibersihkan
+        if not os.path.exists(file_path):
+            return True 
+        st.error(f"Gagal mengosongkan file CSV: {file_path}. Error: {e}")
+        return False
+# --- AKHIR FUNGSI BARU ---
+
+
 # --- Fungsi: Membaca Data Lent dari Template Excel yang Diunggah ---
 
 def read_lent_data_from_template(uploaded_file):
@@ -176,7 +199,7 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
                          right=Side(style='thin'), 
                          top=Side(style='thin'), 
                          bottom=Side(style='thin'))
-    CENTER_ALIGNMENT = Alignment(horizontal='center', vertical='center') # Rata Tengah
+    CENTER_ALIGNMENT = Alignment(horizontal='center', vertical='center') 
 
     # --- KONFIGURASI BARIS UTAMA ---
     START_ROW_LENT_DATA = 8             
@@ -194,7 +217,7 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
     # --- 2. PERGESERAN BARIS LENT ---
     data_in_df_lent = len(lent_df) 
     old_data_count = ORIGINAL_TOTAL_LENT_ROW - START_ROW_LENT_DATA
-    rows_to_write = data_in_df_lent + 1 # +1 untuk baris header Lent (Row 8)
+    rows_to_write = data_in_df_lent + 1 
 
     row_difference = rows_to_write - old_data_count
     
@@ -209,7 +232,7 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
     data_to_write = dataframe_to_rows(lent_df, header=False, index=False)
     
     for r_idx, row in enumerate(data_to_write):
-        row_num = START_ROW_LENT_DATA + 1 + r_idx # Mulai dari Baris 9
+        row_num = START_ROW_LENT_DATA + 1 + r_idx 
         
         for c_idx in range(1, 10):
             if c_idx - 1 < len(row):
@@ -219,13 +242,13 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
             cell.font = NEW_DATA_FONT
             cell.border = THIN_BORDER
 
-            # Set default alignment to Center (untuk non-numerical: A, B, C, G, H, I)
+            # Set default alignment to Center 
             cell.alignment = CENTER_ALIGNMENT 
             
             # Format Angka (Kolom D, E, F)
             if c_idx in [4, 5, 6]:
                 cell.number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
-                # Override: Numerical data should be right-aligned for financial reports
+                # Override: Numerical data should be right-aligned
                 cell.alignment = Alignment(horizontal='right', vertical='center')
             
             # Format Tanggal (Kolom A, H)
@@ -306,7 +329,7 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
     output.seek(0)
     return output
 
-# --- Aplikasi Streamlit Utama (Kode Sisanya Tetap Sama) ---
+# --- Aplikasi Streamlit Utama ---
 
 st.set_page_config(layout="wide", page_title="SLB Daily Position Generator")
 
@@ -419,29 +442,20 @@ st.markdown("---")
 if uploaded_file is not None:
     st.header("3. Hasil Laporan dan Download")
     
-    # BACA DATA LAMA DARI TEMPLATE
     existing_lent_df = read_lent_data_from_template(uploaded_file)
-    
-    # DATA DARI CSV (yang sudah di-input via form)
     csv_lent_df = st.session_state['slb_borrow_df']
     
-    # GABUNGKAN DATA (Utamakan CSV jika ada duplikasi)
     merge_cols = ['Request Date', 'Borrower', 'Stock Code', 'Borrow Amount (shares)', 'Borrow Price', 'Reimbursement Date']
 
-    # Hapus baris di existing_lent yang sudah ada di csv_lent (untuk menghindari duplikasi)
     existing_lent_df = existing_lent_df[~existing_lent_df.set_index(merge_cols).index.isin(csv_lent_df.set_index(merge_cols).index)]
 
-    # Gabungkan semua
     combined_lent_df = pd.concat([existing_lent_df, csv_lent_df], ignore_index=True)
 
     
-    # PROSES DAN GENERATE REPORT
     final_lent_df, final_returned_df = generate_report_dfs(combined_lent_df, st.session_state['slb_return_df'], report_date)
     
-    # Reset pointer file sebelum DITULIS (dikirim ke openpyxl)
     uploaded_file.seek(0)
     
-    # Generate Excel dan Download
     excel_report = create_excel_report(uploaded_file, final_lent_df, final_returned_df, report_date)
 
     if excel_report:
@@ -452,5 +466,22 @@ if uploaded_file is not None:
             file_name=file_name,
             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
+        
+        # --- BLOK BARU: MENGOSONGKAN DATABASE SETELAH DOWNLOAD ---
+        st.markdown("---")
+        st.subheader("💡 Opsi Setelah Laporan Dibuat")
+        
+        # Tombol untuk membersihkan database
+        if st.button("4. Bersihkan Data Input (Lent & Return) dari Database Lokal"):
+            if clear_local_csv(BORROW_FILE) and clear_local_csv(RETURN_FILE):
+                # Perbarui session state agar input form berikutnya kosong
+                st.session_state['slb_borrow_df'] = load_data(BORROW_FILE)
+                st.session_state['slb_return_df'] = load_data(RETURN_FILE)
+                st.success("Database Pinjaman dan Pengembalian lokal berhasil dikosongkan! Data input baru tidak akan terduplikasi di laporan berikutnya.")
+                st.balloons()
+            else:
+                st.error("Gagal membersihkan database lokal.")
+        # --- AKHIR BLOK BARU ---
+        
     else:
         st.warning("Data belum tersedia atau gagal memproses laporan.")

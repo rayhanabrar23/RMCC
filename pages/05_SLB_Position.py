@@ -5,7 +5,7 @@ import io
 import os
 from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Font, Alignment, PatternFill, numbers
+from openpyxl.styles import Font, Alignment, PatternFill, numbers, Border, Side
 
 # --- Konfigurasi File Lokal ---
 # Pastikan file ini ada di root folder dengan header yang benar
@@ -33,7 +33,6 @@ def load_data(file_path):
 
         return df.dropna(how='all')
     except (FileNotFoundError, pd.errors.EmptyDataError):
-        # Jika file tidak ada atau kosong, buat DataFrame kosong dengan header yang sesuai
         if file_path == BORROW_FILE:
             cols = ['Request Date', 'Borrower', 'Stock Code', 'Borrow Amount (shares)', 'Borrow Price', 'Reimbursement Date', 'Status']
         elif file_path == RETURN_FILE:
@@ -63,38 +62,30 @@ def append_and_save(file_path, new_data):
     load_data.clear() 
     return True
 
-# --- Fungsi Baru: Membaca Data Lent dari Template Excel yang Diunggah ---
+# --- Fungsi: Membaca Data Lent dari Template Excel yang Diunggah ---
 
 def read_lent_data_from_template(uploaded_file):
     """Membaca data Lent yang sudah ada di template (Baris 8 hingga 18)."""
     try:
-        # PENTING: Reset pointer sebelum load_workbook
         uploaded_file.seek(0)
-        
-        # data_only=True mengambil nilai sel, bukan formula
         wb = load_workbook(uploaded_file, data_only=True) 
         ws = wb.active
         
         data = []
-        # Membaca dari Baris 8 hingga Baris 18 (Baris Total)
         for r in range(8, 19): 
-            # Ambil nilai dari Kolom A (index 1) hingga Kolom I (index 9)
             row_data = [ws.cell(row=r, column=c).value for c in range(1, 10)]
             
-            # Jika Baris Awal (Kolom A) kosong atau mengandung teks 'Total', hentikan
             if row_data[0] is None or (isinstance(row_data[0], str) and 'Total' in row_data[0]):
                 break
             
             data.append(row_data)
 
-        # Definisikan header yang sesuai dengan urutan di Excel
         cols = ['Request Date', 'Borrower', 'Stock Code', 'Borrow Amount (shares)', 
                 'Borrow Price', 'Borrow Value', 'Status', 'Reimbursement Date', 
                 'Estimated Period (days)']
         
         df = pd.DataFrame(data, columns=cols)
 
-        # Konversi tipe data agar sesuai dengan DataFrame CSV
         for col in ['Request Date', 'Reimbursement Date']:
              df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
         for col in ['Borrow Amount (shares)', 'Borrow Price', 'Borrow Value']:
@@ -103,8 +94,7 @@ def read_lent_data_from_template(uploaded_file):
         return df.dropna(how='all')
 
     except Exception as e:
-        # st.warning(f"Gagal membaca data Lent lama dari template. Akan digunakan template kosong. Error: {e}")
-        return pd.DataFrame() # Mengembalikan DataFrame kosong jika gagal
+        return pd.DataFrame() 
         
 # --- Fungsi Logika Pembuatan Laporan ---
 
@@ -113,8 +103,6 @@ def generate_report_dfs(borrow_df, return_df, report_date):
     
     # 1. Proses Data Pinjaman (LENT) - Tabel Atas
     lent_df = borrow_df.copy()
-    
-    # Pastikan perhitungan Borrow Value dilakukan (penting jika dibaca dari template yang nilainya hilang)
     lent_df['Borrow Value'] = lent_df['Borrow Amount (shares)'] * lent_df['Borrow Price']
     
     lent_df['Request Date'] = pd.to_datetime(lent_df['Request Date'], errors='coerce')
@@ -130,7 +118,7 @@ def generate_report_dfs(borrow_df, return_df, report_date):
     
     # 2. Proses Data Pengembalian (RETURNED) - Tabel Bawah
     
-    returned_on_date = return_df.copy() # Ambil semua riwayat return
+    returned_on_date = return_df.copy() 
     
     if returned_on_date.empty:
         return lent_df, pd.DataFrame()
@@ -138,10 +126,8 @@ def generate_report_dfs(borrow_df, return_df, report_date):
     returned_on_date['Original Request Date'] = pd.to_datetime(returned_on_date['Original Request Date'], errors='coerce')
     returned_on_date['Actual Return Date'] = pd.to_datetime(returned_on_date['Actual Return Date'], errors='coerce')
 
-    # Filter untuk pengembalian yang terjadi sampai tanggal laporan
     returned_on_date = returned_on_date[returned_on_date['Actual Return Date'].dt.date <= report_date].copy()
 
-    # Perhitungan periode dan merge Borrow Price
     merge_cols = ['Stock Code', 'Borrower']
     merged_returns = returned_on_date.merge(
         borrow_df[['Stock Code', 'Borrower', 'Borrow Price']].drop_duplicates(subset=merge_cols, keep='last'),
@@ -153,7 +139,6 @@ def generate_report_dfs(borrow_df, return_df, report_date):
         merged_returns['Original Request Date']
     ).dt.days
 
-    # Buat DataFrame Returned Final
     returned_df_final = pd.DataFrame({
         'Request Date': merged_returns['Original Request Date'].dt.date,
         'Borrower': merged_returns['Borrower'],
@@ -169,13 +154,12 @@ def generate_report_dfs(borrow_df, return_df, report_date):
     
     return lent_df, returned_df_final.reset_index(drop=True)
 
-# --- Fungsi Pembuatan Excel (OpenPyXL, REVISI FINAL) ---
+# --- Fungsi Pembuatan Excel (OpenPyXL, REVISI FINAL PERBAIKAN STYLE) ---
 
 def create_excel_report(template_file, lent_df, returned_df, report_date):
-    """Mengisi template Excel dengan strategi append dan mempertahankan format."""
+    """Mengisi template Excel dengan strategi append, mempertahankan format, dan menerapkan style baru."""
     
     try:
-        # PENTING: Reset pointer sebelum load_workbook
         template_file.seek(0)
         wb = load_workbook(template_file)
         ws = wb.active 
@@ -183,34 +167,36 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
         st.error(f"Gagal memuat template Excel: {e}")
         return None
 
-    # --- KONFIGURASI BARIS UTAMA BERDASARKAN TEMPLATE ANDA ---
-    START_ROW_LENT_DATA = 8             # Data Lent dimulai dari baris 8
-    ORIGINAL_TOTAL_LENT_ROW = 19        # Baris Total Lent di template awal
-    ROWS_BETWEEN_TOTAL_LENT_AND_RETURN_HEADER = 6 # Jarak 6 baris (19 ke 25)
+    # Style baru untuk data
+    # Menggunakan Calibri atau font default yang tersedia, ukuran 9, border tipis
+    NEW_DATA_FONT = Font(name='Calibri', size=9) 
+    THIN_BORDER = Border(left=Side(style='thin'), 
+                         right=Side(style='thin'), 
+                         top=Side(style='thin'), 
+                         bottom=Side(style='thin'))
+
+    # --- KONFIGURASI BARIS UTAMA ---
+    START_ROW_LENT_DATA = 8             
+    ORIGINAL_TOTAL_LENT_ROW = 19        
+    ROWS_BETWEEN_TOTAL_LENT_AND_RETURN_HEADER = 6 
     
     # --- 1. PEMBARUAN HEADER TANGGAL (ROW 2) ---
     date_str_formatted = report_date.strftime("%d-%b-%Y")
-    new_header_value = (
-        "SLB Daily Position\n"
-        f"Daily As of Date: {date_str_formatted} – {date_str_formatted}"
-    )
+    
+    # REVISI: Hapus "SLB Daily Position", hanya sisakan tanggal.
+    new_header_value = f"Daily As of Date: {date_str_formatted} – {date_str_formatted}"
+    
     ws['A2'].value = new_header_value
     ws['A2'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
     # --- 2. PERGESERAN BARIS LENT ---
-    
-    # Hitung data lama yang ada di template (asumsi Baris 8-18)
     old_data_count = ORIGINAL_TOTAL_LENT_ROW - START_ROW_LENT_DATA
     new_data_count = len(lent_df)
+    row_difference = new_data_count - old_data_count
     
-    row_difference = new_data_count - old_data_count # Berapa baris yang perlu ditambahkan/dihapus
-    
-    # --- Sisipkan/Hapus Baris di atas Baris Total Lent lama (Baris 19) ---
     if row_difference > 0:
         ws.insert_rows(ORIGINAL_TOTAL_LENT_ROW, row_difference)
     elif row_difference < 0:
-        # Hapus baris di bawah data lama
-        # Hapus mulai dari baris (Baris 19 + row_difference)
         ws.delete_rows(ORIGINAL_TOTAL_LENT_ROW + row_difference, abs(row_difference))
 
 
@@ -218,65 +204,51 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
     for r_idx, row in enumerate(dataframe_to_rows(lent_df, header=False, index=False)):
         row_num = START_ROW_LENT_DATA + r_idx
         
-        # Tulis Kolom A-I
-        ws.cell(row=row_num, column=1, value=row[0]) # Request Date
-        ws.cell(row=row_num, column=2, value=row[1]) # Borrower
-        ws.cell(row=row_num, column=3, value=row[2]) # Stock Code
-        ws.cell(row=row_num, column=4, value=row[3]) # Borrow Amount
-        ws.cell(row=row_num, column=5, value=row[4]) # Borrow Price
-        ws.cell(row=row_num, column=6, value=row[5]) # Borrow Value
-        ws.cell(row=row_num, column=7, value=row[6]) # Status
-        ws.cell(row=row_num, column=8, value=row[7]) # Reimbursement Date
-        ws.cell(row=row_num, column=9, value=row[8]) # Estimated Period
-        
-        # Format angka (Kolom D, E, F)
-        ws.cell(row=row_num, column=4).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
-        ws.cell(row=row_num, column=5).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
-        ws.cell(row=row_num, column=6).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
+        for c_idx in range(1, 10):
+            cell = ws.cell(row=row_num, column=c_idx, value=row[c_idx - 1])
+            
+            # Terapkan Style Baru
+            cell.font = NEW_DATA_FONT
+            cell.border = THIN_BORDER
+            
+            # Format Angka (Kolom D, E, F)
+            if c_idx in [4, 5, 6]:
+                cell.number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
+            
+            # Format Tanggal (Kolom A, H)
+            if c_idx in [1, 8]:
+                cell.number_format = 'DD-MMM-YY'
 
 
     # --- 4. PERBARUI BARIS TOTAL LENT (ROW BARU YANG BERGESER) ---
     
     new_total_lent_row = START_ROW_LENT_DATA + new_data_count 
     
-    # Salin kembali format Total (dari baris Total lama ke baris Total yang bergeser)
+    # Salin kembali format Total ke baris baru yang bergeser
     for col_idx in range(1, 10):
         source_cell = ws.cell(row=ORIGINAL_TOTAL_LENT_ROW, column=col_idx)
         dest_cell = ws.cell(row=new_total_lent_row, column=col_idx)
-        dest_cell._style = source_cell._style
+        dest_cell._style = source_cell._style 
         
-        if col_idx == 7: # Kolom G adalah tempat formula SUM
+        if col_idx == 7: # Kolom G: Formula SUM (Target Borrow Value di F)
             dest_cell.value = f'=SUM(F{START_ROW_LENT_DATA}:F{new_total_lent_row - 1})'
-        elif col_idx == 6: # Kolom F adalah label 'Total Value:'
+        elif col_idx == 6: # Kolom F: Label 'Total Value:'
             dest_cell.value = 'Total Value:'
-        elif col_idx == 1: # Kolom A adalah label 'Total'
+        elif col_idx == 1: # Kolom A: Label 'Total'
              dest_cell.value = 'Total'
         else:
-            dest_cell.value = None # Kosongkan sel lainnya
-    
+            dest_cell.value = None
+
+
     # --- 5. TULIS DATA RETURNED (TABEL BAWAH) ---
     
-    # Hitung lokasi Header Returned yang baru
     NEW_START_ROW_RETURNED_HEADER = new_total_lent_row + ROWS_BETWEEN_TOTAL_LENT_AND_RETURN_HEADER 
-    
-    # Lokasi Data Returned Baru
     START_ROW_RETURNED_DATA = NEW_START_ROW_RETURNED_HEADER + 2 
 
-    # --- Persiapan: Hapus data Returned lama di lokasi lama (sebelum bergeser) ---
-    # Asumsi data lama Returned ada 2 baris setelah header lama (Baris 27)
-    # Kita tidak tahu pasti jumlah barisnya, jadi ini bisa menyebabkan format rusak jika data lama banyak.
-    # Kita hanya akan memastikan area data Returned lama bersih sebelum menulis data baru.
-    
-    # Kita hanya menghapus konten, bukan baris, untuk meminimalisir kerusakan format
-    
-    
-    # --- Sisipkan Baris baru untuk data Returned (di lokasi yang bergeser) ---
-    
-    new_returned_data_count = len(returned_df)
-    
-    # Hapus konten lama (jika ada) di area Returned data/total yang sekarang berada di bawah START_ROW_RETURNED_DATA
+    # Hapus baris data lama di area Returned
     ws.delete_rows(START_ROW_RETURNED_DATA, 100) 
     
+    new_returned_data_count = len(returned_df)
     if new_returned_data_count > 0:
         ws.insert_rows(START_ROW_RETURNED_DATA, new_returned_data_count)
         
@@ -284,19 +256,20 @@ def create_excel_report(template_file, lent_df, returned_df, report_date):
     for r_idx, row in enumerate(dataframe_to_rows(returned_df, header=False, index=False)):
         row_num = START_ROW_RETURNED_DATA + r_idx
         
-        # Tulis Kolom A-I
-        ws.cell(row=row_num, column=1, value=row[0]) 
-        ws.cell(row=row_num, column=2, value=row[1]) 
-        ws.cell(row=row_num, column=3, value=row[2]) 
-        ws.cell(row=row_num, column=4, value=row[3]) 
-        ws.cell(row=row_num, column=5, value=row[4]) 
-        ws.cell(row=row_num, column=6, value=row[5]) 
-        ws.cell(row=row_num, column=7, value=row[6])
-        ws.cell(row=row_num, column=8, value=row[7])
-        ws.cell(row=row_num, column=9, value=row[8]) 
-            
-        # Format Value cell (Kolom F)
-        ws.cell(row=row_num, column=6).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
+        for c_idx in range(1, 10):
+             cell = ws.cell(row=row_num, column=c_idx, value=row[c_idx - 1])
+             
+             # Terapkan Style Baru
+             cell.font = NEW_DATA_FONT
+             cell.border = THIN_BORDER
+
+             # Format Angka (Kolom D, E, F)
+             if c_idx in [4, 5, 6]:
+                cell.number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
+             
+             # Format Tanggal (Kolom A, H)
+             if c_idx in [1, 8]:
+                cell.number_format = 'DD-MMM-YY'
         
     # --- 6. PERBARUI BARIS TOTAL RETURNED ---
     

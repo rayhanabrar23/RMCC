@@ -221,18 +221,18 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     # C. CL = 0: Emiten Khusus (Prioritas 3)
     df.loc[mask_emiten, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena profil emiten'
     
-    # D. CL != 0: SAHAM MARJIN BARU (Prioritas 4)
-    df.loc[mask_marjin_baru, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena saham baru masuk marjin'
-    
-    # E. CL != 0: Listed/FF Ganda (Prioritas 5)
+    # D. CL != 0: Listed/FF Ganda (Prioritas 4)
     df.loc[mask_listed_ff_ganda, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 5% listed & 20% free float'
     
-    # F. CL != 0: Listed Saja (Prioritas 6)
+    # E. CL != 0: Listed Saja (Prioritas 5)
     df.loc[mask_listed_saja, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 5% listed shares'
     
-    # G. CL != 0: FF Saja (Prioritas 7)
+    # F. CL != 0: FF Saja (Prioritas 6)
     df.loc[mask_ff_saja, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 20% free float'
     # Sisanya (non-nol yang tidak kena Listed/FF/Marjin) akan tetap 'Sesuai metode perhitungan' dari Langkah 8
+
+    # G. CL != 0: SAHAM MARJIN BARU (Prioritas 7)
+    df.loc[mask_marjin_baru, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena saham baru masuk marjin'
 
     df = df.drop(columns=['MIN_CL_OPTION', 'TEMP_HAIRCUT_VAL_ASLI'], errors='ignore')
 
@@ -291,5 +291,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 

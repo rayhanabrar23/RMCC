@@ -47,21 +47,17 @@ def calc_concentration_limit_ff(row):
     except Exception:
         return None
 
-# REVISI: Fungsi override_rmcc_limit diperbaiki agar CL=0 tetap 0
+# Fungsi override_rmcc_limit (diperbaiki agar CL=0 tetap 0 dan hanya CAP)
 def override_rmcc_limit(row):
     kode = row['KODE EFEK']
     nilai_rmcc = row[COL_RMCC]
     
-    # 1. Cek apakah emiten termasuk emiten khusus
     if kode in OVERRIDE_MAPPING:
         nilai_override = OVERRIDE_MAPPING[kode]
         
-        # 2. Jika CL sudah nol (setelah reset di langkah 7), biarkan nol.
         if nilai_rmcc == 0.0:
             return 0.0
             
-        # 3. Jika CL > 0, terapkan pembatasan (CAP)
-        # Ambil nilai minimum antara CL perhitungan saat ini DENGAN batas override.
         return min(nilai_rmcc, nilai_override)
         
     return nilai_rmcc
@@ -130,7 +126,7 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     df[COL_LISTED] = df.apply(calc_concentration_limit_listed, axis=1)
     df[COL_FF] = df.apply(calc_concentration_limit_ff, axis=1)
 
-    # 3. & 4. TENTUKAN CONCENTRATION LIMIT USULAN RMCC
+    # 3. & 4. TENTUKAN CONCENTRATION LIMIT USULAN RMCC (Ambil nilai minimum)
     limit_cols_for_min = [
         'CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU', 
         COL_LISTED, COL_FF, COL_PERHITUNGAN
@@ -138,7 +134,7 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
 
     df['MIN_CL_OPTION'] = df[limit_cols_for_min].fillna(np.inf).min(axis=1)
     
-    # Menambahkan CL KARENA SAHAM MARJIN BARU ke pemicu nol
+    # Tentukan pemicu nol
     mask_pemicu_nol = (
         (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
@@ -158,12 +154,10 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
 
     # 6. Tambah kolom haircut usulan 
     df['HAIRCUT KPEI'] = pd.to_numeric(df['HAIRCUT KPEI'], errors='coerce').fillna(0)
-    
-    # Hanya prioritaskan KPEI jika ada UMA. Jika tidak, pakai PEI.
     df['HAIRCUT PEI USULAN DIVISI'] = np.where(
-        (df['UMA'].fillna('-') != '-') & pd.notna(df['UMA']), # Prioritas 1: Jika ada UMA, pakai KPEI
+        (df['UMA'].fillna('-') != '-') & pd.notna(df['UMA']),
         df['HAIRCUT KPEI'],
-        df['HAIRCUT PEI'] # Prioritas 2: Pakai PEI biasa
+        df['HAIRCUT PEI']
     )
 
     # 7. Nolkan CL USULAN RMCC jika haircut awal 100% atau CL perhitungan < 5M
@@ -172,24 +166,19 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     # 7B. SET HAIRCUT JADI 100% KARENA CL=0
     HAIRCUT_COL_USULAN = 'HAIRCUT PEI USULAN DIVISI'
     mask_rmcc_nol = (df[COL_RMCC] == 0)
-    
-    # Simpan nilai ASLI Haircut Usulan (sebelum ditimpa 100% karena CL=0)
     df['TEMP_HAIRCUT_VAL_ASLI'] = pd.to_numeric(df[HAIRCUT_COL_USULAN], errors='coerce') 
-    
-    # PENTING: Haircut Usulan DITIMPA menjadi 1.0 (100%) karena CL=0
     df.loc[mask_rmcc_nol, HAIRCUT_COL_USULAN] = 1.0 
 
-    # 8. Keterangan Haircut & CONC LIMIT (Keterangan CL diberi placeholder awal)
+    # 8. Keterangan Haircut & CONC LIMIT
     df['PERTIMBANGAN DIVISI (HAIRCUT)'] = df['UMA'].apply(keterangan_uma)
     df['PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Sesuai metode perhitungan' # Placeholder
 
-    # 9. **(LOGIKA BARU)** Definisikan Masker Berdasarkan Sumber Nilai Minimum
+    # 9. **(LOGIKA REVISI FINAL)** Definisikan Masker
 
     # --- Definisikan Semua Masker CL = 0 ---
     mask_emiten = df['KODE EFEK'].isin(KODE_EFEK_KHUSUS)
     mask_nol_final = (df[COL_RMCC] == 0) & (~mask_emiten)
     
-    # Masker CL < 5M (Prioritas TERTINGGI untuk KETERANGAN CL=0)
     mask_lt5m_strict = (
         (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) |
         (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
@@ -198,53 +187,54 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
         (df[COL_RMCC].fillna(np.inf) < THRESHOLD_5M)
     ) & mask_nol_final 
                         
-    # Masker Haircut 100% ASLI 
     mask_hc100_origin = ((df['TEMP_HAIRCUT_VAL_ASLI'].sub(1.0).abs() < TOLERANCE) |
                          (df['TEMP_HAIRCUT_VAL_ASLI'].sub(TARGET_100).abs() < TOLERANCE)) & \
                         mask_nol_final & \
                         (~mask_lt5m_strict)
 
-    # --- Definisikan Masker CL Non-Nol (CL != 0) Berdasarkan Sumber Nilai ---
+    # --- Definisikan Masker CL Non-Nol (CL != 0) ---
     mask_non_nol = (df[COL_RMCC] != 0)
     
     # 1. Keterangan Emiten Khusus (Override Cap)
     df['CL_OVERRIDE_VAL'] = df['KODE EFEK'].map(OVERRIDE_MAPPING).fillna(np.inf)
-    # Cek apakah CL_RMCC sama dengan nilai override (setelah dibulatkan ke 0 decimal di Langkah 5)
+    # True jika CL_RMCC sama persis dengan batas override (yang berarti override terpicu)
     mask_emiten_override = mask_non_nol & mask_emiten & \
                            (df[COL_RMCC].round(0) == df['CL_OVERRIDE_VAL'].round(0))
 
-    # Kelompok Non-Nol Lain (Selain Emiten Khusus)
     mask_other_non_nol = mask_non_nol & (~mask_emiten_override)
     
-    # Gunakan pengecekan kesamaan nilai CL_RMCC dengan kolom sumber (round(0) untuk menghindari floating point error)
+    # Masker Pendukung Kriteria (Apakah emiten kena Listed/FF secara kriteria?)
+    mask_kriteria_listed = pd.notna(df[COL_LISTED])
+    mask_kriteria_ff = pd.notna(df[COL_FF])
     
-    # 2. CL karena Listed/FF Ganda (Prioritas Tertinggi di kelompok ini)
-    mask_listed_ff_ganda = mask_other_non_nol & \
-                           (df[COL_RMCC].round(0) == df[COL_LISTED].round(0)) & \
-                           (df[COL_RMCC].round(0) == df[COL_FF].round(0))
-                           
-    # 3. CL karena Listed Saja
+    # Masker Sumber Nilai Minimum (HARUS BERDASARKAN KESAMAAN DENGAN CL_RMCC)
+    
+    # 2. CL karena Listed Saja (Berasal dari Minimum)
     mask_listed_saja = mask_other_non_nol & \
-                       (df[COL_RMCC].round(0) == df[COL_LISTED].round(0)) & \
-                       pd.notna(df[COL_LISTED]) & \
-                       (~mask_listed_ff_ganda)
+                       (df[COL_RMCC].round(0) == df[COL_LISTED].round(0))
     
-    # 4. CL karena FF Saja
+    # 3. CL karena FF Saja (Berasal dari Minimum)
+    # PENTING: Diberi pengecualian Listed Saja untuk menghindari konflik nilai yang sama
     mask_ff_saja = mask_other_non_nol & \
                    (df[COL_RMCC].round(0) == df[COL_FF].round(0)) & \
-                   pd.notna(df[COL_FF]) & \
-                   (~mask_listed_ff_ganda) & (~mask_listed_saja)
+                   (~mask_listed_saja)
     
-    # 5. CL karena Saham Marjin Baru (50% Perhitungan)
+    # 4. CL karena Saham Marjin Baru (Berasal dari Minimum)
+    # PENTING: Diberi pengecualian agar tidak bentrok jika nilainya sama persis dengan Listed/FF
     mask_marjin_baru = mask_other_non_nol & \
                        (df[COL_RMCC].round(0) == df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].round(0)) & \
                        (df['SAHAM MARJIN BARU?'] == 'YA') & \
-                       (~mask_listed_ff_ganda) & (~mask_listed_saja) & (~mask_ff_saja)
-                       
-    # Catatan: Jika tidak ada mask di atas yang True, CL_RMCC = CL_PERHITUNGAN (placeholder 'Sesuai metode perhitungan' berlaku)
+                       (~mask_listed_saja) & (~mask_ff_saja)
 
-
-    # 10. **Penerapan Keterangan (Order Prioritas Tinggi ke Rendah)**
+    # 5. LOGIKA UPGRADE KETERANGAN LISTED/FF GANDA
+    # Jika CL_RMCC berasal dari Listed ATAU FF, DAN kriteria Listed & FF keduanya terpenuhi
+    # (Ini akan menang atas Listed Saja atau FF Saja)
+    mask_listed_ff_upgrade = (mask_listed_saja | mask_ff_saja) & \
+                             mask_kriteria_listed & \
+                             mask_kriteria_ff
+    
+    
+    # 10. **(PENERAPAN FINAL)** Penerapan Keterangan (Prioritas Rendah ke Tinggi)
 
     # A. CL = 0: CL < 5M (Prioritas 1)
     df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Batas Konsentrasi < Rp5 Miliar'
@@ -257,10 +247,11 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     df.loc[mask_emiten & mask_nol_final, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena profil emiten'
     
     # D. CL != 0: Emiten Khusus (Override Cap) (Prioritas 4)
+    # Harus di bawah P5-P8, namun jika nilai CL_RMCC sama dengan Override, inilah keterangannya.
     df.loc[mask_emiten_override, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena profil emiten'
     
-    # E. CL != 0: Listed/FF Ganda (Prioritas 5)
-    df.loc[mask_listed_ff_ganda, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 5% listed & 20% free float'
+    # E. CL != 0: SAHAM MARJIN BARU (Prioritas 5)
+    df.loc[mask_marjin_baru, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena saham baru masuk marjin'
     
     # F. CL != 0: Listed Saja (Prioritas 6)
     df.loc[mask_listed_saja, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 5% listed shares'
@@ -268,8 +259,9 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
     # G. CL != 0: FF Saja (Prioritas 7)
     df.loc[mask_ff_saja, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 20% free float'
     
-    # H. CL != 0: SAHAM MARJIN BARU (Prioritas 8)
-    df.loc[mask_marjin_baru, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena saham baru masuk marjin'
+    # H. CL != 0: Listed/FF Ganda (Prioritas 8 - UPGRADE KETERANGAN)
+    # Ini menimpa (F) atau (G) jika sumber minimumnya adalah Listed atau FF, tetapi secara kriteria, dia Ganda.
+    df.loc[mask_listed_ff_upgrade, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 5% listed & 20% free float'
     
     # Cleanup kolom bantuan
     df = df.drop(columns=['MIN_CL_OPTION', 'TEMP_HAIRCUT_VAL_ASLI', 'CL_OVERRIDE_VAL'], errors='ignore')
@@ -283,37 +275,31 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
 def main():
     st.title("🛡️ Concentration Limit (CL) & Haircut Calculation")
     
-    # --- Membuat Nama File Contoh Dinamis (Input) ---
     current_month_name = datetime.now().strftime('%B').lower()
     example_filename = f'HCCL_{current_month_name}.xlsx'
     
     st.markdown(f"Unggah file sumber data Concentration Limit (misal: `{example_filename}` atau sejenisnya) untuk menjalankan perhitungan CL.")
     
     required_file_cl = f'File Sumber Concentration Limit (misal: {example_filename})'
-    # ---------------------------------------
     
     uploaded_file_cl = st.file_uploader(f"Unggah {required_file_cl}", type=['xlsx'], key='cl_source')
     
     if uploaded_file_cl is not None:
         if st.button("Jalankan Perhitungan CL", type="primary"):
             try:
-                # Membaca file
                 df_cl_source = pd.read_excel(uploaded_file_cl, engine='openpyxl')
                 
                 with st.spinner('Menghitung Concentration Limit...'):
-                    # Panggil fungsi CL
                     df_cl_hasil = calculate_concentration_limit(df_cl_source)
                 
                 st.success("✅ Perhitungan Concentration Limit selesai. Siap diunduh!")
                 st.subheader("Hasil Concentration Limit (Tabel)")
                 st.dataframe(df_cl_hasil) 
                 
-                # Sediakan tombol download CL
                 output_buffer_cl = BytesIO()
                 df_cl_hasil.to_excel(output_buffer_cl, index=False)
                 output_buffer_cl.seek(0)
                 
-                # --- Nama File Output Dinamis ---
                 month_name_lower_output = datetime.now().strftime('%B').lower()
                 dynamic_filename_output = f'clhc_{month_name_lower_output}.xlsx' 
                 

@@ -30,7 +30,7 @@ def main():
         st.error("❌ ERROR: Streamlit secrets tidak ditemukan. Pastikan konfigurasi sudah benar.")
         return
 
-    # 2. PERBAIKAN BUG: Membuat salinan data credentials (Mengatasi TypeError pada st.secrets)
+    # 2. PERBAIKAN BUG: Membuat salinan data credentials
     try:
         credentials_copy = config['credentials'].to_dict()
     except Exception as e:
@@ -46,8 +46,12 @@ def main():
     )
 
     # 4. Tampilkan Widget Login
-    # PERBAIKAN: Mengubah lokasi kembali ke 'main' (Huruf Kecil) sesuai error traceback
-    name, authentication_status, username = authenticator.login('Login Dashboard', 'main')
+    # PERBAIKAN: Menggunakan argumen eksplisit untuk menghindari ambiguitas posisi.
+    name, authentication_status, username = authenticator.login(
+        'Login Dashboard', 
+        location='main',  # Definisikan lokasi eksplisit
+        key='unique_login_key' # Tambahkan key unik untuk Streamlit
+    )
 
     if authentication_status:
         # Jika berhasil login

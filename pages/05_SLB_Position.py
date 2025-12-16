@@ -213,9 +213,8 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
 # ===============================================================
 
 def update_excel_template(file_template: BytesIO, df_cl_hasil: pd.DataFrame) -> BytesIO:
-    """Mengupdate file template Excel menggunakan data hasil perhitungan."""
+    """Mengupdate file template Excel menggunakan data hasil perhitungan, mencari KODE EFEK di Kolom C."""
     
-    # Definisikan mapping kolom hasil ke Sheet dan Koordinat Excel (Baris 4 adalah Header, Data mulai Baris 5)
     mapping_update = {
         # Sheet HC 
         'HAIRCUT PEI USULAN DIVISI': ('HC', 'R'), 
@@ -232,6 +231,8 @@ def update_excel_template(file_template: BytesIO, df_cl_hasil: pd.DataFrame) -> 
     wb = load_workbook(file_template)
     df_cl_hasil = df_cl_hasil.set_index('KODE EFEK')
     
+    unmatched_codes = []
+    
     for sheet_name in ['HC', 'CONC']:
         if sheet_name not in wb.sheetnames:
             st.warning(f"Sheet '{sheet_name}' tidak ditemukan di file template. Melanjutkan...")
@@ -239,19 +240,21 @@ def update_excel_template(file_template: BytesIO, df_cl_hasil: pd.DataFrame) -> 
             
         ws = wb[sheet_name]
         
-        kode_efek_col_index = 1 # Kolom A
-        start_row = 5 # Data dimulai dari baris 5
+        # PERUBAHAN KRITIS: Kolom KODE EFEK di C (Kolom ke-3)
+        kode_efek_col_index = 3 
+        start_row = 5 # Data dimulai dari baris 5 (setelah header di baris 4)
         
-        # Iterasi dari baris data pertama hingga baris terakhir
         for row_idx in range(start_row, ws.max_row + 1):
+            # Ambil nilai dari Kolom C
             kode_efek_cell = ws.cell(row=row_idx, column=kode_efek_col_index).value
             
             if kode_efek_cell is not None:
                 kode_efek = str(kode_efek_cell).strip()
             else:
-                continue # Skip jika kolom kode efek kosong
+                continue 
 
             if kode_efek in df_cl_hasil.index:
+                # MATCH BERHASIL, LAKUKAN UPDATE
                 data_hasil = df_cl_hasil.loc[kode_efek]
                 
                 for col_name, (target_sheet, target_col_letter) in mapping_update.items():
@@ -261,19 +264,25 @@ def update_excel_template(file_template: BytesIO, df_cl_hasil: pd.DataFrame) -> 
                         try:
                             new_value = data_hasil[col_name]
                             
+                            # Logika penulisan nilai
                             if col_name == 'HAIRCUT PEI USULAN DIVISI' and pd.notna(new_value):
-                                # Pastikan nilai ditulis sebagai float
                                 ws.cell(row=row_idx, column=target_col_index).value = float(new_value)
                             elif pd.notna(new_value):
                                 ws.cell(row=row_idx, column=target_col_index).value = new_value
                             else:
-                                # Jika hasilnya NaN/None, kosongkan sel di template
                                 ws.cell(row=row_idx, column=target_col_index).value = None
 
                         except Exception as e:
-                            # Log error tapi biarkan proses berlanjut
                             print(f"Error writing {col_name} for {kode_efek}: {e}")
+            else:
+                # MATCH GAGAL, CATAT KODE EFEK YANG ADA DI TEMPLATE TAPI TIDAK DI HASIL
+                unmatched_codes.append(f"{sheet_name}: {kode_efek} (Baris {row_idx})")
 
+    # Laporkan hasil debugging di Streamlit
+    if unmatched_codes:
+        st.warning(f"⚠️ Perhatian: {len(unmatched_codes)} KODE EFEK di template tidak ditemukan di hasil perhitungan. Kemungkinan perbedaan format/spasi di Kolom C.")
+        st.code('\n'.join(unmatched_codes[:20]) + ('\n...' if len(unmatched_codes) > 20 else ''))
+        
     # Simpan Workbook ke buffer
     output_buffer = BytesIO()
     wb.save(output_buffer)

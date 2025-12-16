@@ -2,7 +2,4 @@ streamlit==1.28.0   # Ganti >= menjadi ==
 pandas
 numpy
 openpyxl
-# HAPUS reportlab (Penyebab Kegagalan Instalasi di server Streamlit)
-streamlit-authenticator # Tanpa versi untuk menginstal yang terbaru
-pyyaml==5.4.1 
-bcrypt
+

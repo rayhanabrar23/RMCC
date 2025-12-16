@@ -5,3 +5,4 @@ openpyxl
 reportlab
 streamlit-authenticator
 pyyaml
+bcrypt

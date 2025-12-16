@@ -1,6 +1,6 @@
-# Laman Utama.py (FULL CODE FINAL: Isolasi Konflik Impor dan Caching)
+# Laman Utama.py (FULL CODE FINAL: Menggunakan Authenticate dan Alias Impor Unik)
 import streamlit as st
-import streamlit_authenticator as auth_modul # Menggunakan alias unik untuk mengatasi konflik impor
+import streamlit_authenticator as auth_modul # Menggunakan alias unik untuk mengatasi potensi konflik impor
 import yaml 
 from yaml.loader import SafeLoader
 import pandas as pd 
@@ -40,8 +40,7 @@ def main():
 
     # 2. Inisialisasi Authenticator
     try:
-        # PENTING: Menggunakan 'Authenticate' (A besar, e kecil) dari alias unik (auth_modul)
-        # untuk mengakomodasi versi terbaru yang dipaksa dijalankan server Streamlit.
+        # PENTING: Menggunakan 'Authenticate' dari alias 'auth_modul' (versi terbaru)
         authenticator = auth_modul.Authenticate( 
             credentials=config['credentials'],
             cookie_name=config['cookie']['name'],   
@@ -50,11 +49,11 @@ def main():
         )
     except Exception as e:
         st.error(f"❌ FATAL ERROR PADA INISIALISASI: {e}")
-        st.warning("Ini adalah masalah library yang tidak dapat diinisialisasi. Coba Clear cache Penuh.")
+        st.warning("Ini adalah masalah library yang tidak dapat diinisialisasi. Coba Clear cache Penuh atau ganti stauth.Authenticate ke stauth.Authenticator jika error kembali ke 'AttributeError'.")
         return
 
     # 3. Tampilkan Widget Login
-    # SINTAKS INI SUDAH PASTI BENAR (menggunakan keyword arguments).
+    # SINTAKS LOGIN INI SUDAH PASTI BENAR.
     name, authentication_status, username = authenticator.login(
         'Login Dashboard',         
         location='main',           

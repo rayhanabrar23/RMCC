@@ -1,11 +1,13 @@
-streamlit>=1.28.0
+# Versi Streamlit yang stabil
+streamlit==1.28.0
+
+# Library autentikasi lama (memerlukan Authenticator dengan A besar)
+streamlit-authenticator==0.1.0
+
+# Dependensi yang diperlukan oleh stauth dan kode Anda
+pyyaml==5.4.1
 pandas
 numpy
-openpyxl
-reportlab
-streamlit-authenticator==0.1.0
-pyyaml==5.4.1
 bcrypt
 
-
-
+# Hapus reportlab jika Anda tidak menggunakannya untuk menghindari error deployment

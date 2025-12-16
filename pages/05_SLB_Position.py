@@ -1,493 +1,356 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
-import io
-import os
+import numpy as np
 from openpyxl import load_workbook
-from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Font, Alignment, PatternFill, numbers, Border, Side
+from openpyxl.utils import column_index_from_string
+from io import BytesIO
+from datetime import datetime
 
-# --- Konfigurasi File Lokal ---
-# Pastikan file ini ada di root folder dengan header yang benar
-BORROW_FILE = 'borrow_contracts.csv'
-RETURN_FILE = 'return_events.csv'
+# ============================
+# KONFIGURASI GLOBAL CL
+# ============================
+COL_RMCC = 'CONCENTRATION LIMIT USULAN RMCC'
+COL_LISTED = 'CONCENTRATION LIMIT TERKENA % LISTED SHARES'
+COL_FF = 'CONCENTRATION LIMIT TERKENA % FREE FLOAT'
+COL_PERHITUNGAN = 'CONCENTRATION LIMIT SESUAI PERHITUNGAN'
+THRESHOLD_5M = 5_000_000_000
+KODE_EFEK_KHUSUS = ['LPKR', 'MLPL', 'NOBU', 'PTPP', 'SILO']
+OVERRIDE_MAPPING = {
+    'LPKR': 10_000_000_000, 'MLPL': 10_000_000_000,
+    'NOBU': 10_000_000_000, 'PTPP': 50_000_000_000, 'SILO': 10_000_000_000
+}
+TARGET_100 = 100.0
+TOLERANCE = 1e-6 
 
-# --- Fungsi Utility Data Loading (CSV) ---
+# ===============================================================
+# FUNGSI UTILITAS UNTUK CONCENTRATION LIMIT (CL)
+# ===============================================================
 
-@st.cache_data(ttl=600) 
-def load_data(file_path):
-    """Memuat data dari file CSV lokal atau membuat DataFrame kosong."""
+def calc_concentration_limit_listed(row):
     try:
-        df = pd.read_csv(file_path, encoding='utf-8') 
-        
-        # Konversi tipe data tanggal
-        date_cols = ['Request Date', 'Reimbursement Date', 'Actual Return Date', 'Original Request Date']
-        for col in date_cols:
-            if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
-                
-        # Konversi numerik
-        for col in ['Borrow Amount (shares)', 'Borrow Price', 'Return Shares']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-
-        return df.dropna(how='all')
-    except (FileNotFoundError, pd.errors.EmptyDataError):
-        if file_path == BORROW_FILE:
-            cols = ['Request Date', 'Borrower', 'Stock Code', 'Borrow Amount (shares)', 'Borrow Price', 'Reimbursement Date', 'Status']
-        elif file_path == RETURN_FILE:
-            cols = ['Original Request Date', 'Borrower', 'Stock Code', 'Return Shares', 'Actual Return Date']
-        else:
-            cols = []
-            
-        return pd.DataFrame(columns=cols)
-    except Exception as e:
-        st.error(f"Gagal memuat data dari CSV. Pastikan header sudah benar. Error: {e}")
-        return pd.DataFrame()
-
-# --- Fungsi Utility Data Saving (CSV) ---
-
-def append_and_save(file_path, new_data):
-    """Menambahkan data baru, menyimpan kembali ke CSV, dan memperbarui cache."""
-    
-    df = load_data(file_path)
-    new_df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
-    
-    try:
-        new_df.to_csv(file_path, index=False, encoding='utf-8')
-    except Exception as e:
-        st.error(f"Gagal menyimpan ke file CSV lokal. Error: {e}")
-        return False
-
-    load_data.clear() 
-    return True
-
-# --- FUNGSI MENGOSONGKAN DATABASE ---
-def clear_local_csv(file_path):
-    """Mengosongkan file CSV lokal dengan menulis DataFrame kosong ke dalamnya."""
-    try:
-        if file_path == BORROW_FILE:
-            cols = ['Request Date', 'Borrower', 'Stock Code', 'Borrow Amount (shares)', 'Borrow Price', 'Reimbursement Date', 'Status']
-        elif file_path == RETURN_FILE:
-            cols = ['Original Request Date', 'Borrower', 'Stock Code', 'Return Shares', 'Actual Return Date']
-        else:
-            cols = []
-            
-        empty_df = pd.DataFrame(columns=cols)
-        empty_df.to_csv(file_path, index=False, encoding='utf-8')
-        return True
-    except Exception as e:
-        if not os.path.exists(file_path):
-            return True 
-        st.error(f"Gagal mengosongkan file CSV: {file_path}. Error: {e}")
-        return False
-# --- AKHIR FUNGSI MENGOSONGKAN DATABASE ---
-
-
-# --- Fungsi: Membaca Data Lent dari Template Excel yang Diunggah ---
-
-def read_lent_data_from_template(uploaded_file):
-    """Membaca data Lent yang sudah ada di template (Baris 8 hingga 18)."""
-    try:
-        uploaded_file.seek(0)
-        wb = load_workbook(uploaded_file, data_only=True) 
-        ws = wb.active
-        
-        data = []
-        for r in range(8, 19): 
-            row_data = [ws.cell(row=r, column=c).value for c in range(1, 10)]
-            
-            if row_data[0] is None or (isinstance(row_data[0], str) and 'Total' in row_data[0]):
-                break
-            
-            data.append(row_data)
-
-        cols = ['Request Date', 'Borrower', 'Stock Code', 'Borrow Amount (shares)', 
-                'Borrow Price', 'Borrow Value', 'Status', 'Reimbursement Date', 
-                'Estimated Period (days)']
-        
-        df = pd.DataFrame(data, columns=cols)
-        
-        if not df.empty and isinstance(df.iloc[0]['Request Date'], str):
-             df = df.iloc[1:].copy()
-
-        for col in ['Request Date', 'Reimbursement Date']:
-             df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
-        for col in ['Borrow Amount (shares)', 'Borrow Price', 'Borrow Value']:
-             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-             
-        return df.dropna(how='all')
-
-    except Exception as e:
-        return pd.DataFrame() 
-        
-# --- Fungsi Logika Pembuatan Laporan ---
-
-def generate_report_dfs(borrow_df, return_df, report_date):
-    """Memproses data pinjaman dan pengembalian untuk menghasilkan 2 tabel laporan."""
-    
-    # 1. Proses Data Pinjaman (LENT) - Tabel Atas
-    lent_df = borrow_df.copy()
-    lent_df['Borrow Value'] = lent_df['Borrow Amount (shares)'] * lent_df['Borrow Price']
-    
-    lent_df['Request Date'] = pd.to_datetime(lent_df['Request Date'], errors='coerce')
-    lent_df['Reimbursement Date'] = pd.to_datetime(lent_df['Reimbursement Date'], errors='coerce')
-
-    lent_df['Estimated Period (days)'] = (lent_df['Reimbursement Date'] - lent_df['Request Date']).dt.days
-    lent_df['Status'] = 'Lent'
-    
-    lent_df = lent_df[['Request Date', 'Borrower', 'Stock Code', 'Borrow Amount (shares)', 'Borrow Price', 'Borrow Value', 'Status', 'Reimbursement Date', 'Estimated Period (days)']]
-    
-    lent_df['Request Date'] = lent_df['Request Date'].dt.date
-    lent_df['Reimbursement Date'] = lent_df['Reimbursement Date'].dt.date
-    
-    # 2. Proses Data Pengembalian (RETURNED) - Tabel Bawah
-    
-    returned_on_date = return_df.copy() 
-    
-    if returned_on_date.empty:
-        return lent_df, pd.DataFrame()
-
-    returned_on_date['Original Request Date'] = pd.to_datetime(returned_on_date['Original Request Date'], errors='coerce')
-    returned_on_date['Actual Return Date'] = pd.to_datetime(returned_on_date['Actual Return Date'], errors='coerce')
-
-    returned_on_date = returned_on_date[returned_on_date['Actual Return Date'].dt.date <= report_date].copy()
-
-    merge_cols = ['Stock Code', 'Borrower']
-    merged_returns = returned_on_date.merge(
-        borrow_df[['Stock Code', 'Borrower', 'Borrow Price']].drop_duplicates(subset=merge_cols, keep='last'),
-        on=merge_cols, how='left'
-    )
-    
-    merged_returns['Estimated Period (days)'] = (
-        merged_returns['Actual Return Date'] - 
-        merged_returns['Original Request Date']
-    ).dt.days
-
-    returned_df_final = pd.DataFrame({
-        'Request Date': merged_returns['Original Request Date'].dt.date,
-        'Borrower': merged_returns['Borrower'],
-        'Stock Code': merged_returns['Stock Code'],
-        'Borrow Amount (shares)': merged_returns['Return Shares'], 
-        'Borrow Price': merged_returns['Borrow Price'].fillna(0),
-        'Status': 'Returned',
-        'Reimbursement Date': merged_returns['Actual Return Date'].dt.date,
-        'Estimated Period (days)': merged_returns['Estimated Period (days)']
-    })
-
-    returned_df_final['Borrow Value'] = returned_df_final['Borrow Amount (shares)'] * returned_df_final['Borrow Price']
-    
-    return lent_df, returned_df_final.reset_index(drop=True)
-
-# --- Fungsi Pembuatan Excel (OpenPyXL, REVISI AKHIR STYLING) ---
-
-def create_excel_report(template_file, lent_df, returned_df, report_date):
-    """Mengisi template Excel dengan strategi append, mempertahankan format, dan menerapkan style baru."""
-    
-    try:
-        template_file.seek(0)
-        wb = load_workbook(template_file)
-        ws = wb.active 
-    except Exception as e:
-        st.error(f"Gagal memuat template Excel: {e}")
+        if row['PERBANDINGAN DENGAN LISTED SHARES (Sesuai Perhitungan)'] >= 0.05:
+            return 0.0499 * row['LISTED SHARES'] * row['CLOSING PRICE']
+        return None
+    except Exception:
         return None
 
-    # Style baru untuk data
-    NEW_DATA_FONT = Font(name='Roboto Condensed', size=9) 
-    THIN_BORDER = Border(left=Side(style='thin'), 
-                         right=Side(style='thin'), 
-                         top=Side(style='thin'), 
-                         bottom=Side(style='thin'))
-    CENTER_ALIGNMENT = Alignment(horizontal='center', vertical='center') 
+def calc_concentration_limit_ff(row):
+    try:
+        if row['PERBANDINGAN DENGAN FREE FLOAT (Sesuai Perhitungan)'] >= 0.20:
+            return 0.1999 * row['FREE FLOAT (DALAM LEMBAR)'] * row['CLOSING PRICE']
+        return None
+    except Exception:
+        return None
 
-    # --- KONFIGURASI BARIS UTAMA ---
-    START_ROW_LENT_DATA = 8             
-    ORIGINAL_TOTAL_LENT_ROW = 19        
-    ROWS_BETWEEN_TOTAL_LENT_AND_RETURN_HEADER = 6 
+def override_rmcc_limit(row):
+    kode = row['KODE EFEK']
+    nilai_rmcc = row[COL_RMCC]
     
-    # --- 1. PEMBARUAN HEADER TANGGAL (ROW 2) ---
-    date_str_formatted = report_date.strftime("%d-%b-%Y")
-    
-    new_header_value = f"Daily As of Date: {date_str_formatted} – {date_str_formatted}"
-    
-    ws['A2'].value = new_header_value
-    ws['A2'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-
-    # --- 2. PERGESERAN BARIS LENT ---
-    data_in_df_lent = len(lent_df) 
-    old_data_count = ORIGINAL_TOTAL_LENT_ROW - START_ROW_LENT_DATA
-    rows_to_write = data_in_df_lent + 1 
-
-    row_difference = rows_to_write - old_data_count
-    
-    if row_difference > 0:
-        ws.insert_rows(ORIGINAL_TOTAL_LENT_ROW, row_difference)
-    elif row_difference < 0:
-        ws.delete_rows(ORIGINAL_TOTAL_LENT_ROW + row_difference, abs(row_difference))
-
-
-    # --- 3. TULIS ULANG SELURUH DATA LENT (Mulai dari Baris 9) ---
-    
-    data_to_write = dataframe_to_rows(lent_df, header=False, index=False)
-    
-    for r_idx, row in enumerate(data_to_write):
-        row_num = START_ROW_LENT_DATA + 1 + r_idx 
+    if kode in OVERRIDE_MAPPING:
+        nilai_override = OVERRIDE_MAPPING[kode]
         
-        for c_idx in range(1, 10):
-            if c_idx - 1 < len(row):
-                 cell = ws.cell(row=row_num, column=c_idx, value=row[c_idx - 1])
+        if nilai_rmcc == 0.0:
+            return 0.0
             
-            # Terapkan Font dan Border
-            cell.font = NEW_DATA_FONT
-            cell.border = THIN_BORDER
+        return min(nilai_rmcc, nilai_override)
+        
+    return nilai_rmcc
 
-            # Set default alignment to Center 
-            cell.alignment = CENTER_ALIGNMENT 
+def keterangan_uma(uma_date):
+    if pd.notna(uma_date):
+        if not isinstance(uma_date, datetime):
+            try:
+                uma_date = pd.to_datetime(str(uma_date))
+            except Exception:
+                return "Sesuai Metode Perhitungan"
+        return f"Sesuai Haircut KPEI, mempertimbangkan pengumuman UMA dari BEI tanggal {uma_date.strftime('%d %b %Y')}"
+    return "Sesuai Metode Perhitungan"
+
+# ===============================================================
+# FUNGSI UTAMA UNTUK PERHITUNGAN CL
+# ===============================================================
+
+def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
+    """Menjalankan seluruh logika perhitungan Concentration Limit."""
+    
+    df = df_cl_source.copy()
+    
+    if 'KODE EFEK' not in df.columns:
+        df = df.rename(columns={df.columns[0]: 'KODE EFEK'})
+        
+    df['KODE EFEK'] = df['KODE EFEK'].astype(str).str.strip()
+    
+    # 1. Perhitungan limit marjin
+    df['SAHAM MARJIN BARU?'] = df['SAHAM MARJIN BARU?'].astype(str).str.upper().str.strip()
+    df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'] = np.where(
+        df['SAHAM MARJIN BARU?'] == 'YA',
+        df[COL_PERHITUNGAN] * 0.50,
+        df[COL_PERHITUNGAN]
+    )
+
+    # 2. Hitung limit listed & FF
+    df[COL_LISTED] = df.apply(calc_concentration_limit_listed, axis=1)
+    df[COL_FF] = df.apply(calc_concentration_limit_ff, axis=1)
+
+    # 3. & 4. TENTUKAN CONCENTRATION LIMIT USULAN RMCC
+    limit_cols_for_min = [
+        'CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU', 
+        COL_LISTED, COL_FF, COL_PERHITUNGAN
+    ]
+
+    df['MIN_CL_OPTION'] = df[limit_cols_for_min].fillna(np.inf).min(axis=1)
+    
+    mask_pemicu_nol = (
+        (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) |
+        (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
+        (df[COL_LISTED].fillna(np.inf) < THRESHOLD_5M) |
+        (df[COL_FF].fillna(np.inf) < THRESHOLD_5M)
+    )
+
+    df[COL_RMCC] = np.where(
+        mask_pemicu_nol,
+        0.0, 
+        df['MIN_CL_OPTION']
+    )
+
+    # 5. Override emiten khusus (CAP)
+    mask_not_zero = (df[COL_RMCC] != 0.0)
+    df.loc[mask_not_zero, COL_RMCC] = df.loc[mask_not_zero].apply(override_rmcc_limit, axis=1).round(0)
+
+    # 6. Tambah kolom haircut usulan 
+    df['HAIRCUT KPEI'] = pd.to_numeric(df['HAIRCUT KPEI'], errors='coerce').fillna(0)
+    df['HAIRCUT PEI USULAN DIVISI'] = np.where(
+        (df['UMA'].fillna('-') != '-') & pd.notna(df['UMA']),
+        df['HAIRCUT KPEI'],
+        df['HAIRCUT PEI']
+    )
+
+    # 7. Nolkan CL USULAN RMCC jika haircut awal 100% atau CL perhitungan < 5M
+    df['HAIRCUT PEI USULAN DIVISI'] = pd.to_numeric(df['HAIRCUT PEI USULAN DIVISI'], errors='coerce')
+    df[COL_PERHITUNGAN] = pd.to_numeric(df[COL_PERHITUNGAN], errors='coerce')
+
+    target_100_reset = 1.0 
+    mask_haircut_100 = (df['HAIRCUT PEI USULAN DIVISI'].sub(target_100_reset).abs() < TOLERANCE)
+    mask_below_threshold = (df[COL_PERHITUNGAN] < THRESHOLD_5M)
+    mask_final_reset_cl = mask_haircut_100 | mask_below_threshold
+    df.loc[mask_final_reset_cl, COL_RMCC] = 0.0
+    
+    # 7B. SET HAIRCUT JADI 100% KARENA CL=0
+    HAIRCUT_COL_USULAN = 'HAIRCUT PEI USULAN DIVISI'
+    mask_rmcc_nol = (df[COL_RMCC] == 0)
+    df['TEMP_HAIRCUT_VAL_ASLI'] = pd.to_numeric(df[HAIRCUT_COL_USULAN], errors='coerce') 
+    df.loc[mask_rmcc_nol, HAIRCUT_COL_USULAN] = 1.0 
+
+    # 8. Keterangan Haircut & CONC LIMIT
+    df['PERTIMBANGAN DIVISI (HAIRCUT)'] = df['UMA'].apply(keterangan_uma)
+    df['PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Sesuai metode perhitungan' 
+
+    # 9. & 10. PENERAPAN KETERANGAN (LOGIKA KOMPLEKS)
+    mask_emiten = df['KODE EFEK'].isin(KODE_EFEK_KHUSUS)
+    mask_nol_final = (df[COL_RMCC] == 0) & (~mask_emiten)
+    
+    mask_lt5m_strict = (
+        (df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) |
+        (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) |
+        (df[COL_LISTED].fillna(np.inf) < THRESHOLD_5M) |
+        (df[COL_FF].fillna(np.inf) < THRESHOLD_5M) |
+        (df[COL_RMCC].fillna(np.inf) < THRESHOLD_5M)
+    ) & mask_nol_final 
+                         
+    mask_hc100_origin = ((df['TEMP_HAIRCUT_VAL_ASLI'].sub(1.0).abs() < TOLERANCE) |
+                         (df['TEMP_HAIRCUT_VAL_ASLI'].sub(TARGET_100).abs() < TOLERANCE)) & \
+                         mask_nol_final & \
+                         (~mask_lt5m_strict)
+
+    mask_non_nol = (df[COL_RMCC] != 0)
+    df['CL_OVERRIDE_VAL'] = df['KODE EFEK'].map(OVERRIDE_MAPPING).fillna(np.inf)
+    mask_emiten_override = mask_non_nol & mask_emiten & \
+                           (df[COL_RMCC].round(0) == df['CL_OVERRIDE_VAL'].round(0))
+    mask_other_non_nol = mask_non_nol & (~mask_emiten_override)
+    mask_kriteria_listed = pd.notna(df[COL_LISTED])
+    mask_kriteria_ff = pd.notna(df[COL_FF])
+    
+    mask_listed_saja = mask_other_non_nol & (df[COL_RMCC].round(0) == df[COL_LISTED].round(0))
+    mask_ff_saja = mask_other_non_nol & (df[COL_RMCC].round(0) == df[COL_FF].round(0)) & (~mask_listed_saja)
+    mask_marjin_baru = mask_other_non_nol & (df[COL_RMCC].round(0) == df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].round(0)) & (df['SAHAM MARJIN BARU?'] == 'YA') & (~mask_listed_saja) & (~mask_ff_saja)
+    mask_listed_ff_upgrade = (mask_listed_saja | mask_ff_saja) & mask_kriteria_listed & mask_kriteria_ff
+    
+    # Penerapan Keterangan
+    df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Batas Konsentrasi < Rp5 Miliar'
+    df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (HAIRCUT)'] = 'Penyesuaian karena Batas Konsentrasi 0'
+    df.loc[mask_hc100_origin, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Haircut PEI 100%'
+    df.loc[mask_emiten & mask_nol_final, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena profil emiten'
+    df.loc[mask_emiten_override, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena profil emiten'
+    df.loc[mask_marjin_baru, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena saham baru masuk marjin'
+    df.loc[mask_listed_saja, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 5% listed shares'
+    df.loc[mask_ff_saja, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 20% free float'
+    df.loc[mask_listed_ff_upgrade, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena melebihi 5% listed & 20% free float'
+    
+    # Cleanup kolom bantuan
+    df = df.drop(columns=['MIN_CL_OPTION', 'TEMP_HAIRCUT_VAL_ASLI', 'CL_OVERRIDE_VAL'], errors='ignore')
+
+    final_cols = [
+        'KODE EFEK',
+        'CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU', 
+        'CONCENTRATION LIMIT TERKENA % LISTED SHARES', 
+        'CONCENTRATION LIMIT TERKENA % FREE FLOAT', 
+        'CONCENTRATION LIMIT USULAN RMCC', 
+        'HAIRCUT PEI USULAN DIVISI', 
+        'PERTIMBANGAN DIVISI (HAIRCUT)', 
+        'PERTIMBANGAN DIVISI (CONC LIMIT)'
+    ]
+    
+    # Filter dan pastikan semua kolom hasil ada
+    for col in final_cols:
+        if col not in df.columns:
+            df[col] = None 
+
+    return df[final_cols]
+
+
+# ===============================================================
+# FUNGSI UNTUK UPDATE EXCEL DENGAN OPENPYXL
+# ===============================================================
+
+def update_excel_template(file_template: BytesIO, df_cl_hasil: pd.DataFrame) -> BytesIO:
+    """Mengupdate file template Excel menggunakan data hasil perhitungan."""
+    
+    # Definisikan mapping kolom hasil ke Sheet dan Koordinat Excel (Baris 4 adalah Header, Data mulai Baris 5)
+    mapping_update = {
+        # Sheet HC 
+        'HAIRCUT PEI USULAN DIVISI': ('HC', 'R'), 
+        'PERTIMBANGAN DIVISI (HAIRCUT)': ('HC', 'T'), 
+        
+        # Sheet CONC 
+        'CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU': ('CONC', 'P'), 
+        'CONCENTRATION LIMIT TERKENA % LISTED SHARES': ('CONC', 'Q'), 
+        'CONCENTRATION LIMIT TERKENA % FREE FLOAT': ('CONC', 'R'), 
+        'CONCENTRATION LIMIT USULAN RMCC': ('CONC', 'S'), 
+        'PERTIMBANGAN DIVISI (CONC LIMIT)': ('CONC', 'V'), 
+    }
+    
+    wb = load_workbook(file_template)
+    df_cl_hasil = df_cl_hasil.set_index('KODE EFEK')
+    
+    for sheet_name in ['HC', 'CONC']:
+        if sheet_name not in wb.sheetnames:
+            st.warning(f"Sheet '{sheet_name}' tidak ditemukan di file template. Melanjutkan...")
+            continue
             
-            # Format Angka (Kolom D, E, F)
-            if c_idx in [4, 5, 6]:
-                cell.number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
-                # Override: Numerical data should be right-aligned
-                cell.alignment = Alignment(horizontal='right', vertical='center')
+        ws = wb[sheet_name]
+        
+        kode_efek_col_index = 1 # Kolom A
+        start_row = 5 # Data dimulai dari baris 5
+        
+        # Iterasi dari baris data pertama hingga baris terakhir
+        for row_idx in range(start_row, ws.max_row + 1):
+            kode_efek_cell = ws.cell(row=row_idx, column=kode_efek_col_index).value
             
-            # Format Tanggal (Kolom A, H)
-            if c_idx in [1, 8]:
-                cell.number_format = 'DD-MMM-YY'
-
-
-    # --- 4. PERBARUI BARIS TOTAL LENT ---
-    
-    new_total_lent_row = START_ROW_LENT_DATA + data_in_df_lent + 1
-    
-    for col_idx in range(1, 10):
-        source_cell = ws.cell(row=ORIGINAL_TOTAL_LENT_ROW, column=col_idx)
-        dest_cell = ws.cell(row=new_total_lent_row, column=col_idx)
-        dest_cell._style = source_cell._style 
-        
-        if col_idx == 6: 
-            dest_cell.value = f'=SUM(F{START_ROW_LENT_DATA + 1}:F{new_total_lent_row - 1})'
-        elif col_idx == 1: 
-             dest_cell.value = 'Total'
-        else:
-            dest_cell.value = None
-
-
-    # --- 5. TULIS DATA RETURNED (TABEL BAWAH) ---
-    
-    NEW_START_ROW_RETURNED_HEADER = new_total_lent_row + ROWS_BETWEEN_TOTAL_LENT_AND_RETURN_HEADER 
-    START_ROW_RETURNED_DATA = NEW_START_ROW_RETURNED_HEADER + 2 
-
-    ws.delete_rows(START_ROW_RETURNED_DATA, 100) 
-    
-    new_returned_data_count = len(returned_df)
-    if new_returned_data_count > 0:
-        ws.insert_rows(START_ROW_RETURNED_DATA, new_returned_data_count)
-        
-    # Tulis data RETURNED baru
-    for r_idx, row in enumerate(dataframe_to_rows(returned_df, header=False, index=False)):
-        row_num = START_ROW_RETURNED_DATA + r_idx
-        
-        for c_idx in range(1, 10):
-             cell = ws.cell(row=row_num, column=c_idx, value=row[c_idx - 1])
-             
-             # Terapkan Font dan Border
-             cell.font = NEW_DATA_FONT
-             cell.border = THIN_BORDER
-
-             # Set default alignment to Center
-             cell.alignment = CENTER_ALIGNMENT
-             
-             # Format Angka (Kolom D, E, F)
-             if c_idx in [4, 5, 6]:
-                cell.number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
-                # Override: Numerical data should be right-aligned
-                cell.alignment = Alignment(horizontal='right', vertical='center')
-             
-             # Format Tanggal (Kolom A, H)
-             if c_idx in [1, 8]:
-                cell.number_format = 'DD-MMM-YY'
-        
-    # --- 6. PERBARUI BARIS TOTAL RETURNED ---
-    
-    new_total_returned_row = START_ROW_RETURNED_DATA + new_returned_data_count 
-    
-    ws.cell(row=new_total_returned_row, column=6).value = f'=SUM(F{START_ROW_RETURNED_DATA}:F{new_total_returned_row - 1})'
-    ws.cell(row=new_total_returned_row, column=6).font = Font(bold=True)
-    ws.cell(row=new_total_returned_row, column=6).number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
-    
-    ws.cell(row=new_total_returned_row, column=1).value = 'Total'
-    ws.cell(row=new_total_returned_row, column=1).font = Font(bold=True)
-    
-    ws.cell(row=new_total_returned_row, column=5).value = None
-    ws.cell(row=new_total_returned_row, column=7).value = None
-
-
-    # --- SIMPAN DAN KEMBALIKAN FILE ---
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return output
-
-# --- Aplikasi Streamlit Utama ---
-
-st.set_page_config(layout="wide", page_title="SLB Daily Position Generator")
-
-st.title("📊 SLB Daily Position Automation (Gabungan DB)")
-
-# --- Pemuatan Data dari CSV ---
-if 'slb_borrow_df' not in st.session_state:
-    st.session_state['slb_borrow_df'] = load_data(BORROW_FILE)
-if 'slb_return_df' not in st.session_state:
-    st.session_state['slb_return_df'] = load_data(RETURN_FILE)
-
-borrow_df = st.session_state['slb_borrow_df']
-return_df = st.session_state['slb_return_df']
-
-
-# --- Antarmuka Pengguna ---
-
-uploaded_file = st.file_uploader("1. Upload Template Excel SLB Anda", type=['xlsx'])
-report_date = st.date_input("2. Tanggal Laporan Posisi", date.today())
-st.markdown("---")
-
-col1, col2 = st.columns(2)
-
-# --- Form Input Peminjaman Baru (LENT) ---
-with col1:
-    st.header("➕ Input Kontrak Pinjaman Baru (LENT)")
-    with st.form("borrow_form", clear_on_submit=True):
-        req_date = st.date_input("Request Date", date.today())
-        borrower = st.text_input("Borrower (cth: HD, KPEI)")
-        stock = st.text_input("Stock Code (cth: PGEO, MEDC)")
-        amount = st.number_input("Borrow Amount (shares)", min_value=1, step=100)
-        price = st.number_input("Borrow Price", min_value=0.01, step=0.001, format="%.3f")
-        reimburse_date = st.date_input("Reimbursement Date (Jatuh Tempo)", date.today())
-        
-        submitted = st.form_submit_button("Simpan Kontrak Pinjaman ke CSV Lokal")
-        if submitted:
-            if all([borrower, stock, amount, price]):
-                new_borrow = {
-                    'Request Date': req_date,
-                    'Borrower': borrower.upper(),
-                    'Stock Code': stock.upper(),
-                    'Borrow Amount (shares)': amount,
-                    'Borrow Price': price,
-                    'Reimbursement Date': reimburse_date,
-                    'Status': 'Lent'
-                }
-                if append_and_save(BORROW_FILE, new_borrow):
-                    st.session_state['slb_borrow_df'] = load_data(BORROW_FILE)
-                    st.success("Kontrak Pinjaman Baru berhasil ditambahkan ke CSV lokal!")
-                
+            if kode_efek_cell is not None:
+                kode_efek = str(kode_efek_cell).strip()
             else:
-                st.error("Mohon isi semua kolom input Pinjaman.")
+                continue # Skip jika kolom kode efek kosong
 
-# --- Form Input Pengembalian (RETURNED) ---
-with col2:
-    st.header("➖ Input Event Pengembalian (RETURNED)")
-    with st.form("return_form", clear_on_submit=True):
-        actual_return_date = st.date_input("Actual Return Date (Tanggal Keluar)", date.today())
-        
-        active_contracts = borrow_df.copy()
-        if not active_contracts.empty:
-            active_contracts['Contract Key'] = active_contracts['Stock Code'] + ' | ' + active_contracts['Borrower']
-            stock_options = ['Pilih Saham | Peminjam'] + active_contracts['Contract Key'].unique().tolist()
-        else:
-            stock_options = ['Tidak ada kontrak aktif']
-
-        selected_contract = st.selectbox("Pilih Kontrak Saham (Kode Saham | Peminjam)", stock_options)
-        
-        return_shares = st.number_input("Return Amount (shares)", min_value=1, step=100)
-        
-        return_submitted = st.form_submit_button("Simpan Event Pengembalian ke CSV Lokal")
-        
-        if return_submitted:
-            if selected_contract != 'Pilih Saham | Peminjam' and selected_contract != 'Tidak ada kontrak aktif' and return_shares:
-                try:
-                    stock_code, borrower_name = selected_contract.split(' | ')
-                except ValueError:
-                    st.error("Format kontrak tidak valid.")
-                    st.stop()
+            if kode_efek in df_cl_hasil.index:
+                data_hasil = df_cl_hasil.loc[kode_efek]
                 
-                original_contract = borrow_df[
-                    (borrow_df['Stock Code'] == stock_code) & 
-                    (borrow_df['Borrower'] == borrower_name)
-                ]
-                
-                if original_contract.empty:
-                    st.error("Kontrak asli tidak ditemukan.")
-                    st.stop()
-                    
-                original_contract = original_contract.sort_values(by='Reimbursement Date', ascending=False).iloc[0]
+                for col_name, (target_sheet, target_col_letter) in mapping_update.items():
+                    if target_sheet == sheet_name:
+                        target_col_index = column_index_from_string(target_col_letter)
+                        
+                        try:
+                            new_value = data_hasil[col_name]
+                            
+                            if col_name == 'HAIRCUT PEI USULAN DIVISI' and pd.notna(new_value):
+                                # Pastikan nilai ditulis sebagai float
+                                ws.cell(row=row_idx, column=target_col_index).value = float(new_value)
+                            elif pd.notna(new_value):
+                                ws.cell(row=row_idx, column=target_col_index).value = new_value
+                            else:
+                                # Jika hasilnya NaN/None, kosongkan sel di template
+                                ws.cell(row=row_idx, column=target_col_index).value = None
 
-                new_return = {
-                    'Original Request Date': original_contract['Request Date'],
-                    'Borrower': borrower_name,
-                    'Stock Code': stock_code,
-                    'Return Shares': return_shares,
-                    'Actual Return Date': actual_return_date
-                }
-                
-                if append_and_save(RETURN_FILE, new_return):
-                    st.session_state['slb_return_df'] = load_data(RETURN_FILE)
-                    st.success(f"Event Pengembalian untuk {stock_code} berhasil ditambahkan ke CSV lokal!")
-            else:
-                st.error("Mohon pilih kontrak dan isi jumlah saham.")
+                        except Exception as e:
+                            # Log error tapi biarkan proses berlanjut
+                            print(f"Error writing {col_name} for {kode_efek}: {e}")
 
-st.markdown("---")
+    # Simpan Workbook ke buffer
+    output_buffer = BytesIO()
+    wb.save(output_buffer)
+    output_buffer.seek(0)
+    return output_buffer
 
-# --- Bagian Pembuatan Laporan ---
+# ============================
+# ANTARMUKA STREAMLIT
+# ============================
 
-if uploaded_file is not None:
-    st.header("3. Hasil Laporan dan Download")
+def main():
+    st.set_page_config(page_title="HC CL Updater", layout="wide")
+    st.title("🛡️ Concentration Limit (CL) & Haircut Calculation Updater")
+    st.markdown("---")
     
-    existing_lent_df = read_lent_data_from_template(uploaded_file)
-    csv_lent_df = st.session_state['slb_borrow_df']
+    current_month_name = datetime.now().strftime('%B').lower()
     
-    merge_cols = ['Request Date', 'Borrower', 'Stock Code', 'Borrow Amount (shares)', 'Borrow Price', 'Reimbursement Date']
+    st.markdown("""
+    **Instruksi:** Unggah kedua file di bawah ini. File **Template Output** Anda akan di-update pada Sheet `HC` dan `CONC` berdasarkan hasil perhitungan.
+    """)
 
-    existing_lent_df = existing_lent_df[~existing_lent_df.set_index(merge_cols).index.isin(csv_lent_df.set_index(merge_cols).index)]
+    col1, col2 = st.columns(2)
 
-    combined_lent_df = pd.concat([existing_lent_df, csv_lent_df], ignore_index=True)
-
-    
-    final_lent_df, final_returned_df = generate_report_dfs(combined_lent_df, st.session_state['slb_return_df'], report_date)
-    
-    uploaded_file.seek(0)
-    
-    excel_report = create_excel_report(uploaded_file, final_lent_df, final_returned_df, report_date)
-
-    if excel_report:
-        file_name = f"SLB Position {report_date.strftime('%Y%m%d')}.xlsx"
-        
-        # Tombol Download ditempatkan di sini
-        st.download_button(
-            label="Download Laporan Excel Otomatis",
-            data=excel_report,
-            file_name=file_name,
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    with col1:
+        uploaded_file_cl_source = st.file_uploader(
+            "1. Unggah File Sumber Data CL (Input)",
+            type=['xlsx'],
+            key='cl_source'
         )
-        
-        # --- BLOK REVISI: MENGOSONGKAN DATABASE SECARA OTOMATIS ---
-        # Gunakan query param atau teknik lain untuk pemicu, tapi yang paling sederhana adalah
-        # memberikan notifikasi bahwa user harus me-refresh setelah download.
-        
-        st.markdown("---")
-        if not csv_lent_df.empty or not return_df.empty:
-            st.warning("**PENTING:** Data input baru (Lent/Return) telah dimasukkan ke dalam laporan ini. Untuk MENGHINDARI DUPLIKASI di laporan berikutnya, **mohon tekan tombol di bawah**.")
-            
-            if st.button("4. Kosongkan Database Input Lokal Sekarang"):
-                if clear_local_csv(BORROW_FILE) and clear_local_csv(RETURN_FILE):
-                    # Perbarui session state agar input form berikutnya kosong
-                    st.session_state['slb_borrow_df'] = load_data(BORROW_FILE)
-                    st.session_state['slb_return_df'] = load_data(RETURN_FILE)
-                    st.success("✅ Database Pinjaman dan Pengembalian lokal **berhasil dikosongkan**! Silakan **refresh halaman** untuk mulai input data baru.")
-                    st.balloons()
-                else:
-                    st.error("❌ Gagal membersihkan database lokal.")
-        else:
-             st.info("Database input lokal sudah kosong.")
-        # --- AKHIR BLOK REVISI ---
-        
+
+    with col2:
+        uploaded_file_cl_template = st.file_uploader(
+            "2. Unggah File Template Output (yang akan di-update)",
+            type=['xlsx'],
+            key='cl_template'
+        )
+
+    st.markdown("---")
+
+    if uploaded_file_cl_source is not None and uploaded_file_cl_template is not None:
+        if st.button("🚀 Jalankan Perhitungan & Update Template Excel", type="primary"):
+            try:
+                # 1. BACA FILE SUMBER
+                df_cl_source = pd.read_excel(uploaded_file_cl_source, engine='openpyxl')
+                
+                # 2. JALANKAN PERHITUNGAN
+                with st.spinner('Menghitung Concentration Limit dan Haircut...'):
+                    df_cl_hasil = calculate_concentration_limit(df_cl_source)
+
+                st.success("✅ Perhitungan Concentration Limit selesai.")
+                st.dataframe(df_cl_hasil.head(), caption="Preview Hasil Perhitungan CL/HC")
+
+                # 3. BACA FILE TEMPLATE DARI BUFFER DAN UPDATE
+                uploaded_file_cl_template.seek(0) 
+                
+                with st.spinner('⏳ Mengupdate File Template Excel (Menggunakan openpyxl)...'):
+                    output_buffer_template = update_excel_template(uploaded_file_cl_template, df_cl_hasil)
+                
+                st.success("🎉 File Template Output berhasil di-update tanpa merusak formula!")
+                
+                dynamic_filename_output = f'clhc_updated_{current_month_name}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx' 
+                
+                st.download_button(
+                    label="⬇️ Unduh File Template Output yang Sudah Di-update",
+                    data=output_buffer_template,
+                    file_name=dynamic_filename_output, 
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+                
+            except Exception as e:
+                st.error(f"❌ Gagal dalam proses. Pastikan file memiliki format, nama sheet (`HC`, `CONC`), dan kolom kunci (`KODE EFEK` di Kolom A) yang benar. Detail Error: {e}")
+                st.exception(e)
+
+    elif uploaded_file_cl_source is None and uploaded_file_cl_template is None:
+        st.info("⬆️ Silakan unggah kedua file untuk memulai.")
     else:
-        st.warning("Data belum tersedia atau gagal memproses laporan.")
+        st.warning("⚠️ Harap unggah **kedua** file (Sumber Data dan Template Output).")
+
+if __name__ == '__main__':
+    main()

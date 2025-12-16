@@ -324,7 +324,8 @@ def main():
                     df_cl_hasil = calculate_concentration_limit(df_cl_source)
 
                 st.success("✅ Perhitungan Concentration Limit selesai.")
-                st.dataframe(df_cl_hasil.head(), caption="Preview Hasil Perhitungan CL/HC")
+                st.caption("Preview Hasil Perhitungan CL/HC (5 Baris Pertama)")
+                st.dataframe(df_cl_hasil.head())
 
                 # 3. BACA FILE TEMPLATE DARI BUFFER DAN UPDATE
                 uploaded_file_cl_template.seek(0) 

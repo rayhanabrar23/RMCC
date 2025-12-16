@@ -1,18 +1,15 @@
 import pickle
 from pathlib import Path
 import streamlit as st
-import streamlit_authenticator as stauth # Menggunakan alias stauth
+import streamlit_authenticator as stauth
 import pandas as pd
 import os
 
-# --- 1. KONFIGURASI PENGGUNA (Menggunakan Format Lama) ---
-# CATATAN: Format ini tidak direkomendasikan untuk produksi. 
-# Sebaiknya gunakan format Dictionary yang sudah kita coba sebelumnya atau config.yaml
+# --- 1. KONFIGURASI PENGGUNA ---
 names = ["Rayhan Abrar", "Ismi Arnum"]
 usernames = ["abrar", "ismi"]
 
 # --- 2. MEMUAT PASSWORD HASHED ---
-# Pastikan file 'hashed_pw.pkl' berada di folder yang sama dengan file Python ini.
 try:
     file_path = Path(__file__).parent / "hashed_pw.pkl"
     with file_path.open("rb") as file:
@@ -26,24 +23,23 @@ except Exception as e:
 
 
 # --- 3. FUNGSI KONTEN UTAMA APLIKASI ---
-# Konten ini HANYA dipanggil jika login berhasil.
+# Fungsi ini harus didefinisikan di level atas (tidak di-indent)
 def app_content(user_name):
-    # Pastikan logo ini masih berlaku
     st.logo("https://www.pei.co.id/images/logo-grey-3x.png", icon_image=None)  
     st.title("RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD")
     st.success(f"Anda login sebagai: {user_name}")
     st.markdown("---")
     
     # Tambahkan konten dashboard Anda di sini
-    # Misalnya: st.dataframe(data_rmcc)
+    # st.dataframe(data_rmcc)
 
 
 # --- 4. FUNGSI UTAMA (MAIN) ---
+# Fungsi ini juga harus didefinisikan di level atas (tidak di-indent)
 def main():
     st.set_page_config(page_title="Dashboard Utama", layout="centered")
 
-    # Inisialisasi Authenticator dengan keyword arguments yang BENAR untuk versi terbaru
-    # Menggunakan stauth.Authenticate()
+    # Inisialisasi Authenticator
     authenticator = stauth.Authenticate(
         names=names,
         usernames=usernames,
@@ -60,27 +56,26 @@ def main():
 
     if authentication_status is False:
         st.error("Username/password salah")
-        # st.stop() # Hentikan eksekusi jika gagal
 
     elif authentication_status is None:
         st.warning("Silakan masukkan username dan password")
 
-    elif authentication_status:
-        # Jika autentikasi berhasil
+    # Ini adalah blok IF yang dimaksud pada error Anda. Baris berikutnya di dalamnya HARUS di-indent.
+    elif authentication_status: 
         
-        # Tampilkan Tombol Logout di sidebar
+        # Tampilkan Tombol Logout di sidebar (DI-INDENT)
         authenticator.logout("Logout", "sidebar")
         
-        # Tampilkan nama pengguna di sidebar
+        # Tampilkan nama pengguna di sidebar (DI-INDENT)
         st.sidebar.title(f"Selamat Datang, {name}")
         
-        # Panggil konten aplikasi
+        # Panggil konten aplikasi (DI-INDENT)
         app_content(name) 
         
-        # Tambahkan menu navigasi sidebar Anda di sini
+        # Tambahkan menu navigasi sidebar Anda di sini (DI-INDENT)
         # st.sidebar.header("Navigasi")
         # st.sidebar.button("Lendable Limit")
-        # st.sidebar.button("Concentration Limit")
+
         
 # --- 6. EKSEKUSI MAIN ---
 if __name__ == '__main__':

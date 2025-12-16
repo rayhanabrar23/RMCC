@@ -1,9 +1,14 @@
-# Laman Utama.py (KEMBALI KE VERSI TERBARU DENGAN FIX SECRETS)
-
+# Laman Utama.py (FINAL FIX MENGGUNAKAN VERSI STREAMLIT-AUTHENTICATOR TERBARU)
 import streamlit as st
-import streamlit_authenticator as stauth # Gunakan alias stauth lagi
+import streamlit_authenticator as stauth
 import pandas as pd 
-# ... (app_content tetap sama) ...
+
+def app_content():
+    st.logo("https://www.pei.co.id/images/logo-grey-3x.png", icon_image=None)  
+    st.title("RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD")
+    st.markdown("""
+    Selamat datang! Aplikasi ini telah berhasil melalui proses autentikasi.
+    """)
 
 def main():
     st.set_page_config(page_title="Dashboard Login", layout="centered")
@@ -15,35 +20,46 @@ def main():
         st.error("❌ ERROR: Streamlit secrets tidak ditemukan.")
         return
 
-    # 2. PERBAIKAN: Menggunakan to_dict() lagi (versi 0.2.x lebih baik dalam hal ini)
+    # 2. PERBAIKAN STRUKTUR: Menggunakan to_dict() untuk kompatibilitas versi terbaru
     try:
         credentials_copy = config['credentials'].to_dict()
     except Exception as e:
-        st.error(f"❌ ERROR: Struktur Secrets salah. Detail: {e}")
+        st.error(f"❌ ERROR: Struktur Secrets salah atau kunci 'credentials' tidak ada. Detail: {e}")
         return
 
     # 3. Inisialisasi Authenticator
     try:
-        # KEMBALI MENGGUNAKAN Authenticate (A besar, e kecil) untuk versi terbaru
+        # PENTING: Gunakan Authenticate (A besar, e kecil) untuk versi terbaru
         authenticator = stauth.Authenticate( 
-            credentials=credentials_copy,       # Menggunakan data yang sudah di to_dict()
+            credentials=credentials_copy,       
             cookie_name=config['cookie']['name'],   
             key=config['cookie']['key'],            
             expiry_days=config['cookie']['expiry_days'] 
         )
     except Exception as e:
         st.error(f"❌ ERROR SAAT INISIALISASI AUTHENTICATOR: {e}")
+        st.warning("Jika ini adalah AttributeError, coba ganti stauth.Authenticate menjadi stauth.Authenticator.")
         return
 
     # 4. Tampilkan Widget Login
-    # Format argumen yang stabil (keyword arguments)
+    # PENTING: Menggunakan format Posisi + Keyword yang paling stabil
     name, authentication_status, username = authenticator.login(
         'Login Dashboard',         
         location='main',           
         key='unique_login_key'     
     )
-    
-    # ... (lanjutan kode IF/ELIF/ELSE tetap sama) ...
-    
+
+    if authentication_status:
+        st.sidebar.success(f'Anda login sebagai: {name}')
+        authenticator.logout('Logout', 'sidebar') 
+        app_content() 
+        
+    elif authentication_status is False:
+        st.error('Username atau password salah')
+
+    elif authentication_status is None:
+        st.warning('Silakan login untuk mengakses Dashboard')
+
+
 if __name__ == '__main__':
     main()

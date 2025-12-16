@@ -1,15 +1,4 @@
-# Menggunakan versi stabil, tanpa simbol >=
-streamlit==1.28.0
-
-# Hapus reportlab karena sering menyebabkan error deployment di Streamlit Cloud
-# (Jika Anda tidak menggunakannya untuk membuat PDF, hapus saja)
-
-# Hilangkan versi lama (0.1.0) karena server menolak dan menginstal yang baru.
-# Kita perlu menginstal versi terbaru dan menyesuaikan kode.
-streamlit-authenticator
-
-pyyaml==5.4.1 
+streamlit==1.28.0 
 pandas
 numpy
 openpyxl
-bcrypt

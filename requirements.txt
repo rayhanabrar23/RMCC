@@ -3,5 +3,5 @@ pandas
 numpy
 openpyxl
 reportlab
-streamlit-authenticator==0.1.0
+streamlit-authenticator
 pyyaml

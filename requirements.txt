@@ -4,5 +4,6 @@ numpy
 openpyxl
 reportlab
 streamlit-authenticator
-pyyaml
+pyyaml==5.4.1
 bcrypt
+

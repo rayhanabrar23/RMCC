@@ -1,15 +1,18 @@
-# Laman Utama.py (File Utama/Index - FINAL DENGAN LOGIN)
+# Laman Utama.py (File Utama/Index - FINAL DENGAN LOGIN & PERBAIKAN BUG)
 
 import streamlit as st
 import streamlit_authenticator as stauth
-# Tidak perlu import yaml karena kita menggunakan st.secrets
+import pandas as pd
+# Anda mungkin perlu menambahkan import pustaka lain di sini jika dibutuhkan 
+# oleh app_content (misalnya, numpy, io, dll.)
 
 # ----------------------------------------------------
 # FUNGSI KONTEN UTAMA APLIKASI (Hanya Tampil Setelah Login)
 # ----------------------------------------------------
 def app_content():
     # Mengatur layout dan judul halaman
-    st.set_page_config(page_title="LL & CL Dashboard", layout="wide")
+    # Catatan: st.set_page_config sebaiknya dipanggil hanya sekali sebelum widget apa pun,
+    # namun dalam struktur multi-page, Streamlit menangani layout.
     
     logo_url = "https://www.pei.co.id/images/logo-grey-3x.png"  
     st.logo(logo_url, icon_image=None)  
@@ -30,30 +33,39 @@ def app_content():
     """)
 
 # ----------------------------------------------------
-# FUNGSI MAIN() UNTUK LOGIN
+# FUNGSI MAIN() UNTUK LOGIN & AUTENTIKASI
 # ----------------------------------------------------
 def main():
     # Mengatur layout halaman sebelum login
+    # Layout 'centered' cocok untuk tampilan login
     st.set_page_config(page_title="Dashboard Login", layout="centered")
 
     # 1. Muat Secrets dari Streamlit Cloud
-    # st.secrets berisi semua data konfigurasi yang sudah Anda masukkan di Cloud
     try:
         config = st.secrets 
     except AttributeError:
         st.error("❌ ERROR: Streamlit secrets tidak ditemukan. Pastikan Anda sudah memasukkan konfigurasi credentials dan cookie di Streamlit Cloud Secrets.")
         return
 
-    # 2. Inisialisasi Authenticator
+    # 2. PERBAIKAN BUG: Membuat salinan data credentials
+    # Kita menggunakan .to_dict() untuk membuat salinan yang dapat dimodifikasi
+    # agar library stauth.Authenticate tidak memicu TypeError pada st.secrets.
+    try:
+        credentials_copy = config['credentials'].to_dict()
+    except Exception as e:
+        # Jika struktur secrets salah (misal, tidak ada kunci 'credentials')
+        st.error(f"❌ ERROR: Struktur Secrets salah atau kunci 'credentials' tidak ada. Detail: {e}")
+        return
+
+    # 3. Inisialisasi Authenticator menggunakan salinan data
     authenticator = stauth.Authenticate(
-        config['credentials'],
+        credentials_copy,  # <-- Menggunakan salinan yang aman
         config['cookie']['name'],
         config['cookie']['key'],
         config['cookie']['expiry_days']
     )
 
-    # 3. Tampilkan Widget Login
-    # Login widget akan muncul di tengah halaman ('main')
+    # 4. Tampilkan Widget Login
     name, authentication_status, username = authenticator.login('Login Dashboard', 'main')
 
     if authentication_status:
@@ -61,7 +73,7 @@ def main():
         st.sidebar.success(f'Anda login sebagai: {name}')
         authenticator.logout('Logout', 'sidebar') 
         
-        # Panggil konten utama aplikasi
+        # Panggil konten utama aplikasi yang terproteksi
         app_content() 
         
     elif authentication_status is False:

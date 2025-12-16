@@ -1,0 +1,15 @@
+cookie:
+  expiry_days: 30
+  key: "P5d$23fA@gYkL!4zH9qB*t7vW1jN&rM0xQ" # Ganti dengan kunci rahasia Anda
+  name: "HC_CL_Cookie"
+
+credentials:
+  usernames:
+    admin_rmcc: # Username 1
+      email: rayhanabrar023@gmail.com
+      name: Admin RMCC 1
+      password: "$2b$12$gCPXBSu7P.H3NwfhI6JRfO5ZHAFjU/nZzowibk2sGyVuMh1xfPTJm" # Hashed Password
+    staff_cl: # Username 2
+      email: rayhanabrar123@gmail.com
+      name: Admin RMCC 2
+      password: "$2b$12$gCPXBSu7P.H3NwfhI6JRfO5Wu424VQFkGquAxnRrcuPYwuRUi89y." # Hashed Password

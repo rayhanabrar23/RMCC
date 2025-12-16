@@ -1,60 +1,49 @@
-# Laman Utama.py (FULL CODE FINAL - DENGAN FIX KONVERSI KREDENSIAL)
+# Laman Utama.py (KODE UJI COBA UNTUK MENDIAGNOSIS MASALAH SECRETS)
 
 import streamlit as st
 import streamlit_authenticator as stauth
-import pandas as pd 
 
 def app_content():
-    logo_url = "https://www.pei.co.id/images/logo-grey-3x.png"  
-    st.logo(logo_url, icon_image=None)  
-    
-    st.title("RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD")
-    st.markdown("""
-    Selamat datang! Aplikasi ini telah dibagi menjadi empat halaman (aplikasi) terpisah yang dapat Anda akses melalui **menu navigasi di sebelah kiri** (ikon **>**).
-    """)
+    # ... (Konten app_content tetap sama) ...
+    st.logo("https://www.pei.co.id/images/logo-grey-3x.png", icon_image=None)  
+    st.title("SUCCESS: DASHBOARD BERHASIL DIMUAT")
+    st.markdown("Ini berarti *Authenticator* telah dibuat dan login berhasil.")
 
 def main():
     st.set_page_config(page_title="Dashboard Login", layout="centered")
 
-    try:
-        config = st.secrets 
-    except AttributeError:
-        st.error("❌ ERROR: Streamlit secrets tidak ditemukan. Pastikan konfigurasi sudah benar.")
-        return
-
-    # 2. PERBAIKAN: MEMFORMAT STRUKTUR KREDENSIAL SECARA EKSPLISIT
-    try:
-        data_credentials = config['credentials']
-        
-        # MEMBANGUN STRUKTUR DICTIONARY YANG DIHARAPKAN STAUTH SECARA MANUAL
-        credentials_formatted = {
-            'usernames': {
-                user_key: {
-                    'email': data_credentials['usernames'][user_key]['email'],
-                    'name': data_credentials['usernames'][user_key]['name'],
-                    'password': data_credentials['usernames'][user_key]['password']
-                }
-                for user_key in data_credentials['usernames']
+    # 1. DATA DUMMY (SAMA DENGAN FORMAT SECRETS)
+    # HANYA UNTUK TUJUAN DIAGNOSIS
+    dummy_credentials = {
+        'usernames': {
+            'rayhan': {
+                'email': 'rayhan@pei.co.id',
+                'name': 'Rayhan Abrar',
+                # Password di sini harus HASHED, bukan plain text.
+                # Contoh: 'abc' hashed menggunakan bcrypt adalah $2b$12$L7v...
+                'password': '$2b$12$L7vyRk.s9LqUf753nO0E6OnT9r3eUf6NqN9.G7s2bS2k8x3vQ/T4m' 
             }
         }
-        
-    except Exception as e:
-        st.error(f"❌ ERROR: Gagal memformat struktur Secrets. Kemungkinan salah kunci di .toml. Detail: {e}")
-        return
+    }
+    dummy_cookie = {
+        'name': 'some_cookie',
+        'key': 'some_key',
+        'expiry_days': 30
+    }
 
-    # 3. Inisialisasi Authenticator
+    # 2. Inisialisasi Authenticator dengan data DUMMY
     authenticator = stauth.Authenticate(
-        credentials_formatted,  # GUNAKAN DATA YANG SUDAH DIFORMAT
-        config['cookie']['name'],
-        config['cookie']['key'],
-        config['cookie']['expiry_days']
+        dummy_credentials,  
+        dummy_cookie['name'],
+        dummy_cookie['key'],
+        dummy_cookie['expiry_days']
     )
 
-    # 4. Tampilkan Widget Login (FORMAT INI ADALAH YANG PALING STABIL)
+    # 3. Tampilkan Widget Login
     name, authentication_status, username = authenticator.login(
-        'Login Dashboard',         # Argumen POSISI (Nama Form)
-        location='main',           # Argumen KEYWORD
-        key='unique_login_key'     # Argumen KEYWORD
+        'Login Dashboard',         
+        location='main',           
+        key='unique_login_key'     
     )
 
     if authentication_status:

@@ -1,4 +1,4 @@
-# Laman Utama.py (File Utama/Index - FINAL DENGAN SEMUA PERBAIKAN)
+# Laman Utama.py (File Utama/Index - FINAL & SUDAH FIX)
 
 import streamlit as st
 import streamlit_authenticator as stauth
@@ -30,7 +30,7 @@ def main():
         st.error("❌ ERROR: Streamlit secrets tidak ditemukan. Pastikan konfigurasi sudah benar.")
         return
 
-    # 2. PERBAIKAN: Membuat salinan data credentials (Mengatasi TypeError pada st.secrets)
+    # 2. PERBAIKAN BUG: Membuat salinan data credentials (Mengatasi TypeError pada st.secrets)
     try:
         credentials_copy = config['credentials'].to_dict()
     except Exception as e:
@@ -46,8 +46,8 @@ def main():
     )
 
     # 4. Tampilkan Widget Login
-    # PERBAIKAN: Mengubah lokasi dari 'main' menjadi 'MAIN' (Huruf Kapital)
-    name, authentication_status, username = authenticator.login('Login Dashboard', 'MAIN')
+    # PERBAIKAN: Mengubah lokasi kembali ke 'main' (Huruf Kecil) sesuai error traceback
+    name, authentication_status, username = authenticator.login('Login Dashboard', 'main')
 
     if authentication_status:
         # Jika berhasil login

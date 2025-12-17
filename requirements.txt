@@ -4,3 +4,5 @@ PyYAML==6.0.1
 pandas
 openpyxl
 reportlab==4.0.4
+numpy
+

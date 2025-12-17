@@ -3,15 +3,15 @@ credentials:
     abrar:
       email: rayhan@example.com
       name: Rayhan Abrar
-      password: user01 # Nanti kita ganti dengan hasil hash
+      password: $2b$12$e80y.mD69.3hGqYm6L8mO.7y5X7x8n7R7I5v5v5v5v5v5v5v5v5v.
     ismi:
       email: ismi@example.com
       name: Ismi Arnum
-      password: user02 # Nanti kita ganti dengan hasil hash
+      password: $2b$12$K1z5X/p9/vFpW7M7v6Y7e.8v5X7x8n7R7I5v5v5v5v5v5v5v5v5v.
     razif:
       email: razif@example.com
       name: Razif Yunus
-      password: user03
+      password: $2b$12$Z8v5X7x8n7R7I5v5v5v5v.9v5X7x8n7R7I5v5v5v5v5v5v5v5v5v.
 cookie:
   expiry_days: 30
   key: some_signature_key

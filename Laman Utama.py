@@ -65,7 +65,7 @@ authenticator = stauth.Authenticate(
 )
 
 # --- 6. TAMPILAN DASHBOARD / LOGIN ---
-st.title("RMCC DASHBOARD")
+st.title("RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD")
 
 name, authentication_status, username = authenticator.login('main')
 
@@ -87,6 +87,7 @@ elif st.session_state.get("authentication_status") is False:
 
 elif st.session_state.get("authentication_status") is None:
     st.warning('Silakan masukkan kredensial untuk mengakses dashboard.')
+
 
 
 

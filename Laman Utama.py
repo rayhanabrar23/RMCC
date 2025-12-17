@@ -28,7 +28,7 @@ st.markdown(
 
     /* Tombol Login Warna Merah PEI */
     button[kind="primaryFormSubmit"] {
-        background-color: #C62127 !important;
+        background-color: #FFFFFF !important;
         color: white !important;
         border-radius: 8px !important;
         width: 100% !important;
@@ -87,5 +87,6 @@ elif st.session_state.get("authentication_status") is False:
 
 elif st.session_state.get("authentication_status") is None:
     st.warning('Silakan masukkan kredensial untuk mengakses dashboard.')
+
 
 

@@ -1,15 +1,14 @@
 import streamlit as st
+# Cek apakah sudah login dari halaman utama
+if "login_status" not in st.session_state or not st.session_state["login_status"]:
+    st.error("🚨 Akses Ditolak! Silakan login di halaman utama terlebih dahulu.")
+    st.stop() # Hentikan aplikasi di sini
 import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
 from openpyxl.utils import column_index_from_string
 from io import BytesIO
 from datetime import datetime
-
-# Cek apakah sudah login dari halaman utama
-if "login_status" not in st.session_state or not st.session_state["login_status"]:
-    st.error("🚨 Akses Ditolak! Silakan login di halaman utama terlebih dahulu.")
-    st.stop() # Hentikan aplikasi di sini
 
 # ============================
 # KONFIGURASI GLOBAL CL

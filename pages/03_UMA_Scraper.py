@@ -1,14 +1,13 @@
 # pages/03_UMA_Scraper.py
 
 import streamlit as st
-import pandas as pd
-from datetime import datetime
-from io import BytesIO
-
 # Cek apakah sudah login dari halaman utama
 if "login_status" not in st.session_state or not st.session_state["login_status"]:
     st.error("🚨 Akses Ditolak! Silakan login di halaman utama terlebih dahulu.")
     st.stop() # Hentikan aplikasi di sini
+import pandas as pd
+from datetime import datetime
+from io import BytesIO
 
 # --- FUNGSI UTAMA STREAMLIT (Wajib bernama main() atau app() di file page) ---
 def app():
@@ -83,4 +82,5 @@ def app():
 
         except Exception as e:
             st.error(f"❌ Gagal memproses file. Pastikan format kolom benar. Error: {e}")
+
 

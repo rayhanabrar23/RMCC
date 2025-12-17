@@ -25,6 +25,7 @@ authenticator = stauth.Authenticate(
     config['cookie']['name'],
     config['cookie']['key'],
     config['cookie']['expiry_days'],
+    0
     config['preauthorized']
 )
 
@@ -46,3 +47,4 @@ elif authentication_status == False:
     st.error('Username/password salah')
 elif authentication_status == None:
     st.warning('Silakan masukkan username dan password')
+

@@ -5,9 +5,9 @@ import base64
 from yaml.loader import SafeLoader
 
 # --- 1. KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="RMCC Dashboard", layout="centered")
+st.set_page_config(page_title="RMCC Dashboard", layout="wide") # Pakai 'wide' agar lebih fleksibel
 
-# --- 2. FUNGSI BACKGROUND & STYLING (CSS CUSTOM) ---
+# --- 2. FUNGSI BACKGROUND & STYLING (CSS) ---
 def get_base64(bin_file):
     with open(bin_file, 'rb') as f:
         data = f.read()
@@ -18,7 +18,7 @@ try:
     st.markdown(
         f"""
         <style>
-        /* Mengatur Background */
+        /* Mengatur Background agar memenuhi layar tanpa terpotong */
         .stApp {{
             background-image: url("data:image/png;base64,{bin_str}");
             background-size: cover;
@@ -26,57 +26,57 @@ try:
             background-attachment: fixed;
         }}
 
-        /* Merapikan Header agar tidak tertutup */
+        /* Sembunyikan Header default Streamlit agar bersih */
         header {{background: rgba(0,0,0,0) !important;}}
-        
-        /* Membuat Kotak Login Putih Solid & Bersih */
+        [data-testid="stHeader"] {{background: rgba(0,0,0,0) !important;}}
+
+        /* Mengatur posisi konten utama: Geser ke kiri agar tidak menutupi gambar kantor di kanan */
+        .main .block-container {{
+            max-width: 1200px;
+            padding-top: 2rem;
+            margin-left: 5% !important; /* Geser ke kiri */
+        }}
+
+        /* Desain Kotak Login yang Modern & Kompak */
         [data-testid="stForm"] {{
-            background-color: #FFFFFF !important;
-            padding: 40px !important;
-            border-radius: 20px !important;
-            box-shadow: 0px 10px 25px rgba(0,0,0,0.2) !important;
-            max-width: 450px;
-            margin: auto;
+            background-color: rgba(255, 255, 255, 0.95) !important;
+            padding: 30px !important;
+            border-radius: 15px !important;
+            box-shadow: 0px 8px 20px rgba(0,0,0,0.2) !important;
+            width: 380px !important; /* Ukuran kotak diperkecil agar tidak 'makan tempat' */
             border: none !important;
         }}
 
-        /* Warna Teks Label (Username/Password) jadi Hitam Pekat */
-        [data-testid="stForm"] label p {{
-            color: #1E1E1E !important;
-            font-weight: 600 !important;
-            font-size: 1.1rem !important;
+        /* Warna Teks Judul Dashboard - diletakkan di atas kotak login */
+        .custom-title {{
+            color: #C62127 !important; /* Merah PEI */
+            font-size: 2.2rem;
+            font-weight: 800;
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
+            margin-bottom: 10px;
         }}
 
-        /* Tombol Login Warna Merah (Senada Logo PEI) */
+        /* Warna Label Form */
+        [data-testid="stForm"] label p {{
+            color: #1E1E1E !important;
+            font-weight: bold !important;
+        }}
+
+        /* Tombol Login Merah PEI */
         button[kind="primaryFormSubmit"] {{
             background-color: #C62127 !important;
             color: white !important;
-            border-radius: 10px !important;
+            border-radius: 8px !important;
             width: 100% !important;
+            height: 45px !important;
             border: none !important;
-            height: 3em !important;
+            margin-top: 10px;
         }}
-
-        /* Input Field (Kotak Ketik) */
-        .stTextInput input {{
-            background-color: #F0F2F6 !important;
-            color: #1E1E1E !important;
-            border-radius: 10px !important;
-        }}
-
-        /* Judul Dashboard di Atas Kotak */
-        h1 {{
-            color: white !important;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
-            text-align: center;
-            font-weight: 800 !important;
-        }}
-
-        /* Kotak Pesan Error/Warning */
+        
+        /* Kotak Notifikasi di bawah form */
         .stAlert {{
+            width: 380px !important;
             background-color: white !important;
-            color: black !important;
-            border-radius: 15px !important;
             border-left: 5px solid #C62127 !important;
         }}
         </style>
@@ -84,7 +84,7 @@ try:
         unsafe_allow_html=True
     )
 except Exception:
-    st.warning("Gunakan file 'background.jpg' untuk tampilan maksimal.")
+    pass
 
 # --- 3. LOGIKA SIDEBAR ---
 if "login_status" not in st.session_state or st.session_state["login_status"] is not True:
@@ -103,26 +103,27 @@ authenticator = stauth.Authenticate(
     config['preauthorized']
 )
 
-# --- 6. TAMPILAN DASHBOARD / LOGIN ---
-st.title("RMCC DASHBOARD")
+# --- 6. TAMPILAN HALAMAN LOGIN ---
 
-name, authentication_status, username = authenticator.login('main')
+# Mengatur tata letak menggunakan kolom agar form ada di sebelah kiri
+col1, col2 = st.columns([1, 1.5]) 
 
-if st.session_state.get("authentication_status"):
-    st.session_state["login_status"] = True
+with col1:
+    # Judul diletakkan di sini agar rapi di atas kotak
+    st.markdown('<p class="custom-title">RMCC DASHBOARD</p>', unsafe_allow_html=True)
     
-    with st.sidebar:
-        st.write(f"Selamat Datang, **{st.session_state['name']}**")
-        if st.button("Logout"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
+    name, authentication_status, username = authenticator.login('main')
 
-    st.success(f"Login Berhasil. Halo {st.session_state['name']}!")
-    # Tambahkan konten dashboard kamu di sini
+    if st.session_state.get("authentication_status"):
+        st.session_state["login_status"] = True
+        st.rerun()
 
-elif st.session_state.get("authentication_status") is False:
-    st.error('Username/Password salah')
+    elif st.session_state.get("authentication_status") is False:
+        st.error('User/Pass salah')
 
-elif st.session_state.get("authentication_status") is None:
-    st.info('Silakan masukkan kredensial untuk mengakses dashboard.')
+    elif st.session_state.get("authentication_status") is None:
+        st.info('Silakan login')
+
+# Kosongkan col2 agar gambar kantor di background (sisi kanan) terlihat jelas
+with col2:
+    st.write("")

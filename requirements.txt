@@ -1,5 +1,5 @@
-streamlit==1.28.0   # Ganti >= menjadi ==
+streamlit==1.28.0
+streamlit-authenticator==0.3.1
+PyYAML==6.0.1
 pandas
-numpy
 openpyxl
-

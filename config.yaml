@@ -8,6 +8,10 @@ credentials:
       email: ismi@example.com
       name: Ismi Arnum
       password: user02 # Nanti kita ganti dengan hasil hash
+    razif:
+      email: razif@example.com
+      name: Razif Yunus
+      password: user03
 cookie:
   expiry_days: 30
   key: some_signature_key

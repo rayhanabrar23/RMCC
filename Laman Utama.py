@@ -6,6 +6,15 @@ from yaml.loader import SafeLoader
 # 1. Konfigurasi Halaman
 st.set_page_config(page_title="RMCC Dashboard", layout="centered")
 
+# --- TRIK CSS: Sembunyikan Sidebar jika belum login ---
+if "login_status" not in st.session_state or not st.session_state["login_status"]:
+    st.markdown("""
+        <style>
+            [data-testid="stSidebarNav"] {display: none;}
+            [data-testid="stSidebar"] {display: none;}
+        </style>
+    """, unsafe_allow_html=True)
+
 # 2. Load data dari config.yaml
 with open('config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
@@ -22,16 +31,16 @@ authenticator = stauth.Authenticate(
 # 4. Tampilkan Form Login
 name, authentication_status, username = authenticator.login('main')
 
-# 5. Logika setelah Login
+# 5. Logika Login
 if authentication_status:
-    # Jika login berhasil, tampilkan tombol logout di sidebar
+    st.session_state["login_status"] = True # Simpan status login
+    
+    # Munculkan Sidebar kembali setelah login
+    st.markdown("""<style>[data-testid="stSidebarNav"] {display: block;}</style>""", unsafe_allow_html=True)
+    
     authenticator.logout('Logout', 'sidebar')
-    
-    st.write(f'Selamat datang, *{name}*')
-    st.title('RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD')
-    
-    # Masukkan konten utama dashboard Anda di sini
-    st.success("Dashboard Aktif!")
+    st.title(f'Selamat datang, {name}')
+    st.success("Silakan pilih menu di samping untuk melanjutkan.")
 
 elif authentication_status == False:
     st.error('Username/password salah')

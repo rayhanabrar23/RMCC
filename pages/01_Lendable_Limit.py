@@ -18,6 +18,11 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
+# Cek apakah sudah login dari halaman utama
+if "login_status" not in st.session_state or not st.session_state["login_status"]:
+    st.error("🚨 Akses Ditolak! Silakan login di halaman utama terlebih dahulu.")
+    st.stop() # Hentikan aplikasi di sini
+
 # ============================
 # KONFIGURASI GLOBAL LL
 # ============================
@@ -529,6 +534,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 

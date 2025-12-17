@@ -10,8 +10,8 @@ st.set_page_config(page_title="RMCC Dashboard", layout="centered")
 if "login_status" not in st.session_state or not st.session_state["login_status"]:
     st.markdown("""
         <style>
-            [data-testid="stSidebarNav"] {display: none;}
-            [data-testid="stSidebar"] {display: none;}
+            [data-testid="stSidebarNav"] {display: none !important;}
+            [data-testid="stSidebar"] {display: none !important;}
         </style>
     """, unsafe_allow_html=True)
 
@@ -19,13 +19,12 @@ if "login_status" not in st.session_state or not st.session_state["login_status"
 with open('config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
-# 3. Inisialisasi Authenticator
+# 3. Inisialisasi Authenticator (Urutan diperbaiki)
 authenticator = stauth.Authenticate(
     config['credentials'],
-    config['cookie']['name'],
-    config['cookie']['key'],
-    config['cookie']['expiry_days'],
-    0,
+    "RMCC_v5",                # Nama cookie baru untuk reset sesi lama
+    "signature_key_abc123",   # Key rahasia
+    0,                        # 0 artinya refresh = wajib login ulang
     config['preauthorized']
 )
 
@@ -35,10 +34,10 @@ name, authentication_status, username = authenticator.login('main')
 # --- 5. LOGIKA DISPLAY BERDASARKAN STATUS AUTENTIKASI ---
 
 if authentication_status:
-    # 1. Simpan status di Session State
+    # Simpan status di Session State
     st.session_state["login_status"] = True
     
-    # 2. PAKSA SIDEBAR MUNCUL (Gunakan !important agar CSS dasar Streamlit kalah)
+    # PAKSA SIDEBAR MUNCUL
     st.markdown("""
         <style>
             [data-testid="stSidebarNav"] {display: block !important;}
@@ -46,27 +45,17 @@ if authentication_status:
         </style>
     """, unsafe_allow_html=True)
     
-    # 3. Tampilkan Logout dan Konten
+    # Tampilkan Logout di Sidebar
     authenticator.logout('Logout', 'sidebar')
+    
     st.sidebar.title(f"User: {name}")
-    
     st.title(f'Selamat datang, {name}')
-    st.success("Login Berhasil! Silakan gunakan menu di samping.")
-    
-    # Di sini Anda bisa memanggil fungsi konten utama Anda
-    # app_content()
+    st.success("Login Berhasil! Menu dashboard tersedia di samping.")
 
 elif authentication_status is False:
-    # Jika gagal login, pastikan sidebar tetap hilang
     st.session_state["login_status"] = False
     st.error('Username atau password salah')
-    st.markdown("""<style>[data-testid="stSidebar"] {display: none;}</style>""", unsafe_allow_html=True)
 
 elif authentication_status is None:
-    # Jika belum login, pastikan sidebar hilang total
     st.session_state["login_status"] = False
     st.warning('Silakan masukkan username dan password')
-    st.markdown("""<style>[data-testid="stSidebar"] {display: none;}</style>""", unsafe_allow_html=True)
-
-
-

@@ -32,20 +32,41 @@ authenticator = stauth.Authenticate(
 # 4. Tampilkan Form Login
 name, authentication_status, username = authenticator.login('main')
 
-# 5. Logika Login
-if authentication_status:
-    st.session_state["login_status"] = True # Simpan status login
-    
-    # Munculkan Sidebar kembali setelah login
-    st.markdown("""<style>[data-testid="stSidebarNav"] {display: block;}</style>""", unsafe_allow_html=True)
-    
-    authenticator.logout('Logout', 'sidebar')
-    st.title(f'Selamat datang, {name}')
-    st.success("Silakan pilih menu di samping untuk melanjutkan.")
+# --- 5. LOGIKA DISPLAY BERDASARKAN STATUS AUTENTIKASI ---
 
-elif authentication_status == False:
-    st.error('Username/password salah')
-elif authentication_status == None:
+if authentication_status:
+    # 1. Simpan status di Session State
+    st.session_state["login_status"] = True
+    
+    # 2. PAKSA SIDEBAR MUNCUL (Gunakan !important agar CSS dasar Streamlit kalah)
+    st.markdown("""
+        <style>
+            [data-testid="stSidebarNav"] {display: block !important;}
+            [data-testid="stSidebar"] {display: flex !important;}
+        </style>
+    """, unsafe_allow_html=True)
+    
+    # 3. Tampilkan Logout dan Konten
+    authenticator.logout('Logout', 'sidebar')
+    st.sidebar.title(f"User: {name}")
+    
+    st.title(f'Selamat datang, {name}')
+    st.success("Login Berhasil! Silakan gunakan menu di samping.")
+    
+    # Di sini Anda bisa memanggil fungsi konten utama Anda
+    # app_content()
+
+elif authentication_status is False:
+    # Jika gagal login, pastikan sidebar tetap hilang
+    st.session_state["login_status"] = False
+    st.error('Username atau password salah')
+    st.markdown("""<style>[data-testid="stSidebar"] {display: none;}</style>""", unsafe_allow_html=True)
+
+elif authentication_status is None:
+    # Jika belum login, pastikan sidebar hilang total
+    st.session_state["login_status"] = False
     st.warning('Silakan masukkan username dan password')
+    st.markdown("""<style>[data-testid="stSidebar"] {display: none;}</style>""", unsafe_allow_html=True)
+
 
 

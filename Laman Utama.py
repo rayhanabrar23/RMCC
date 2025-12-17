@@ -37,7 +37,7 @@ st.markdown(
 
     /* Judul Dashboard */
     h1 {
-        color: #c62127 !important;
+        color: #FFFFFF !important;
         text-align: center;
         font-weight: 700 !important;
         margin-bottom: 2rem !important;
@@ -87,6 +87,7 @@ elif st.session_state.get("authentication_status") is False:
 
 elif st.session_state.get("authentication_status") is None:
     st.warning('Silakan masukkan kredensial untuk mengakses dashboard.')
+
 
 
 

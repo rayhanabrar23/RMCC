@@ -5,22 +5,20 @@ import base64
 from yaml.loader import SafeLoader
 
 # --- 1. KONFIGURASI HALAMAN ---
-# Harus diletakkan di paling atas
 st.set_page_config(page_title="RMCC Dashboard", layout="centered")
 
-# --- 2. FUNGSI BACKGROUND & STYLING (CSS) ---
+# --- 2. FUNGSI BACKGROUND & STYLING (CSS CUSTOM) ---
 def get_base64(bin_file):
     with open(bin_file, 'rb') as f:
         data = f.read()
     return base64.b64encode(data).decode()
 
 try:
-    # Mengambil file background.jpg dari repository GitHub kamu
     bin_str = get_base64('background.jpg')
     st.markdown(
         f"""
         <style>
-        /* Mengatur Background Seluruh Layar */
+        /* Mengatur Background */
         .stApp {{
             background-image: url("data:image/png;base64,{bin_str}");
             background-size: cover;
@@ -28,56 +26,75 @@ try:
             background-attachment: fixed;
         }}
 
-        /* Membuat Kotak Login (Form) Jadi Putih Bersih */
+        /* Merapikan Header agar tidak tertutup */
+        header {{background: rgba(0,0,0,0) !important;}}
+        
+        /* Membuat Kotak Login Putih Solid & Bersih */
         [data-testid="stForm"] {{
-            background-color: white !important;
-            padding: 30px !important;
-            border-radius: 15px !important;
-            box-shadow: 0px 4px 15px rgba(0,0,0,0.3);
-            max-width: 500px;
+            background-color: #FFFFFF !important;
+            padding: 40px !important;
+            border-radius: 20px !important;
+            box-shadow: 0px 10px 25px rgba(0,0,0,0.2) !important;
+            max-width: 450px;
             margin: auto;
+            border: none !important;
         }}
 
-        /* Mengubah Warna Label Input (Username/Password) Jadi Hitam */
-        [data-testid="stForm"] label {{
-            color: #31333F !important;
-            font-weight: bold;
+        /* Warna Teks Label (Username/Password) jadi Hitam Pekat */
+        [data-testid="stForm"] label p {{
+            color: #1E1E1E !important;
+            font-weight: 600 !important;
+            font-size: 1.1rem !important;
         }}
 
-        /* Mengatur Judul Dashboard agar Berbayang dan Terbaca */
+        /* Tombol Login Warna Merah (Senada Logo PEI) */
+        button[kind="primaryFormSubmit"] {{
+            background-color: #C62127 !important;
+            color: white !important;
+            border-radius: 10px !important;
+            width: 100% !important;
+            border: none !important;
+            height: 3em !important;
+        }}
+
+        /* Input Field (Kotak Ketik) */
+        .stTextInput input {{
+            background-color: #F0F2F6 !important;
+            color: #1E1E1E !important;
+            border-radius: 10px !important;
+        }}
+
+        /* Judul Dashboard di Atas Kotak */
         h1 {{
             color: white !important;
-            text-shadow: 2px 2px 8px #000000;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
             text-align: center;
+            font-weight: 800 !important;
         }}
 
-        /* Mengatur Pesan Error/Warning agar Tidak Transparan */
+        /* Kotak Pesan Error/Warning */
         .stAlert {{
-            background-color: rgba(255, 255, 255, 0.95) !important;
+            background-color: white !important;
             color: black !important;
-            border-radius: 10px;
+            border-radius: 15px !important;
+            border-left: 5px solid #C62127 !important;
         }}
         </style>
         """,
         unsafe_allow_html=True
     )
-except Exception as e:
-    st.error(f"Gagal memuat background: {e}")
+except Exception:
+    st.warning("Gunakan file 'background.jpg' untuk tampilan maksimal.")
 
-# --- 3. LOGIKA SIDEBAR (HANYA MUNCUL SETELAH LOGIN) ---
+# --- 3. LOGIKA SIDEBAR ---
 if "login_status" not in st.session_state or st.session_state["login_status"] is not True:
-    st.markdown("""
-        <style>
-            section[data-testid="stSidebar"] {display: none !important;}
-            [data-testid="stSidebarNav"] {display: none !important;}
-        </style>
-    """, unsafe_allow_html=True)
+    st.markdown("<style>section[data-testid='stSidebar'] {display: none !important;}</style>", unsafe_allow_html=True)
 
-# --- 4. LOAD KONFIGURASI LOGIN ---
+# --- 4. LOAD KONFIGURASI ---
 with open('config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
-# --- 5. INISIALISASI AUTHENTICATOR ---
+# --- 5. AUTHENTICATOR ---
 authenticator = stauth.Authenticate(
     config['credentials'],
     "RMCC_v101", 
@@ -86,39 +103,26 @@ authenticator = stauth.Authenticate(
     config['preauthorized']
 )
 
-# --- 6. FORM LOGIN ---
-# 'main' artinya form muncul di halaman utama, bukan sidebar
+# --- 6. TAMPILAN DASHBOARD / LOGIN ---
+st.title("RMCC DASHBOARD")
+
 name, authentication_status, username = authenticator.login('main')
 
-# --- 7. LOGIKA SETELAH LOGIN ---
 if st.session_state.get("authentication_status"):
     st.session_state["login_status"] = True
     
-    # Munculkan kembali sidebar setelah sukses login
-    st.markdown("""
-        <style>
-            section[data-testid="stSidebar"] {display: flex !important;}
-            [data-testid="stSidebarNav"] {display: block !important;}
-        </style>
-    """, unsafe_allow_html=True)
-    
     with st.sidebar:
-        st.write(f"User Aktif: **{st.session_state['name']}**")
-        if st.button("Logout", key="logout_btn"):
+        st.write(f"Selamat Datang, **{st.session_state['name']}**")
+        if st.button("Logout"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
-        st.markdown("---")
 
-    # KONTEN UTAMA DASHBOARD
-    st.title("RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD")
-    st.success(f"Selamat datang, {st.session_state['name']}!")
-    st.info("Gunakan menu navigasi di sebelah kiri untuk mengelola data.")
+    st.success(f"Login Berhasil. Halo {st.session_state['name']}!")
+    # Tambahkan konten dashboard kamu di sini
 
 elif st.session_state.get("authentication_status") is False:
-    st.error('Username atau password salah')
-    st.session_state["login_status"] = False
+    st.error('Username/Password salah')
 
 elif st.session_state.get("authentication_status") is None:
-    st.warning('Silakan masukkan username dan password Anda.')
-    st.session_state["login_status"] = False
+    st.info('Silakan masukkan kredensial untuk mengakses dashboard.')

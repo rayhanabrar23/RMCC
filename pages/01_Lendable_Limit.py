@@ -1,10 +1,6 @@
 # pages/01_Lendable_Limit.py
 
 import streamlit as st
-# Cek apakah sudah login dari halaman utama
-if "login_status" not in st.session_state or not st.session_state["login_status"]:
-    st.error("🚨 Akses Ditolak! Silakan login di halaman utama terlebih dahulu.")
-    st.stop() # Hentikan aplikasi di sini
 import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
@@ -533,6 +529,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 

@@ -7,7 +7,7 @@ from yaml.loader import SafeLoader
 st.set_page_config(page_title="RMCC Dashboard", layout="centered")
 
 # --- 2. LOGIKA SIDEBAR (CSS) ---
-# Sembunyikan sidebar secara default jika belum terautentikasi
+# Sembunyikan sidebar secara default jika belum login agar user fokus pada form login
 if "login_status" not in st.session_state or not st.session_state["login_status"]:
     st.markdown("""
         <style>
@@ -21,12 +21,12 @@ with open('config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
 # --- 4. INISIALISASI AUTHENTICATOR ---
-# Nama cookie diubah ke 'RMCC_vFinal' untuk mereset sesi lama di browser Anda
+# Nama cookie 'RMCC_vFinal' dan expiry 0 memastikan setiap refresh/tutup tab harus login lagi
 authenticator = stauth.Authenticate(
     config['credentials'],
-    "RMCC_vFinal",             # Nama cookie baru
+    "RMCC_vFinal",             # Nama cookie unik
     "random_signature_key",    # Kunci tanda tangan
-    0,                         # 0 = Sesi dihapus saat tab ditutup/refresh
+    0,                         # 0 = Wajib login ulang saat refresh/tutup tab
     config['preauthorized']
 )
 
@@ -35,10 +35,10 @@ name, authentication_status, username = authenticator.login('main')
 
 # --- 6. LOGIKA SETELAH LOGIN ---
 if authentication_status:
-    # Simpan status login ke session state untuk halaman lain
+    # Simpan status login ke session state
     st.session_state["login_status"] = True
     
-    # Munculkan kembali sidebar dengan paksa
+    # Munculkan kembali sidebar dengan paksa setelah login berhasil
     st.markdown("""
         <style>
             [data-testid="stSidebarNav"] {display: block !important;}
@@ -46,23 +46,27 @@ if authentication_status:
         </style>
     """, unsafe_allow_html=True)
     
-    # --- LOGOUT CUSTOM (Agar benar-benar bersih) ---
+    # --- LOGOUT CUSTOM (Hanya satu tombol untuk menghindari DuplicateWidgetID) ---
     with st.sidebar:
         st.write(f"Selamat Datang, **{name}**")
-        if st.button("Logout"):
-            # Bersihkan semua session state
-            for key in st.session_state.keys():
+        if st.button("Logout", key="logout_tombol_utama"):
+            # Bersihkan semua session state secara manual
+            for key in list(st.session_state.keys()):
                 del st.session_state[key]
-            # Panggil fungsi logout internal
-            authenticator.logout('Logout', 'sidebar')
+            
+            # Panggil fungsi logout internal tanpa render tombol tambahan
+            authenticator.logout(location='unrendered')
+            
+            # Paksa aplikasi kembali ke kondisi awal
             st.rerun()
+            
         st.markdown("---")
 
     # --- KONTEN UTAMA DASHBOARD ---
     st.title("RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD")
-    st.success(f"Anda masuk sebagai {name}. Silakan pilih menu di samping.")
+    st.success(f"Anda masuk sebagai {name}. Silakan gunakan menu navigasi di samping.")
     
-    # Tempatkan isi dashboard utama Anda di sini
+    # Anda bisa menambahkan visualisasi atau data dashboard utama Anda di sini
 
 elif authentication_status is False:
     st.session_state["login_status"] = False
@@ -70,4 +74,4 @@ elif authentication_status is False:
 
 elif authentication_status is None:
     st.session_state["login_status"] = False
-    st.info('Silakan masukkan username dan password untuk mengakses dashboard.')
+    st.info('Silakan masukkan username dan password untuk mengakses sistem.')

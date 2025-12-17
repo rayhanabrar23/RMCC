@@ -3,15 +3,15 @@ credentials:
     abrar:
       email: rayhan@example.com
       name: Rayhan Abrar
-      password: $2b$12$e80y.mD69.3hGqYm6L8mO.7y5X7x8n7R7I5v5v5v5v5v5v5v5v5v.
+      password: $2b$12$QL2ktgUyElN/44pP8z7IHuNx35cx8vk33UN/15zhQnJGGxy4dvi7i
     ismi:
       email: ismi@example.com
       name: Ismi Arnum
-      password: $2b$12$K1z5X/p9/vFpW7M7v6Y7e.8v5X7x8n7R7I5v5v5v5v5v5v5v5v5v.
+      password: $2b$12$dnykBKiyR5WFMYbiYpkbJ.sfdBM4nsKxH8Qse/mdeIi2Gl7zOyzVm
     razif:
       email: razif@example.com
       name: Razif Yunus
-      password: $2b$12$Z8v5X7x8n7R7I5v5v5v5v.9v5X7x8n7R7I5v5v5v5v5v5v5v5v5v.
+      password: $2b$12$YPFxjY8faEZzrW8mqYzfZ.snk6b2nH9pkXIBPDQ/srhQceCDj0FCS
 cookie:
   expiry_days: 30
   key: some_signature_key

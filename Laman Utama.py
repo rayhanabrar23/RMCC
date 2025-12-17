@@ -5,7 +5,7 @@ import base64
 from yaml.loader import SafeLoader
 
 # --- 1. KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="RMCC Dashboard", layout="centered")
+st.set_page_config(page_title="RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD", layout="centered")
 
 # --- 2. STYLING (CSS CUSTOM) ---
 # Menghapus bagian background image, fokus ke tampilan form yang rapi
@@ -87,6 +87,7 @@ elif st.session_state.get("authentication_status") is False:
 
 elif st.session_state.get("authentication_status") is None:
     st.warning('Silakan masukkan kredensial untuk mengakses dashboard.')
+
 
 
 

@@ -14,12 +14,12 @@ st.markdown(
     <style>
     /* Mengatur warna latar belakang aplikasi menjadi abu-abu terang standar */
     .stApp {
-        background-color: #f0f2f6;
+        background-color: #000000;
     }
 
     /* Membuat Kotak Login Putih Solid & Rapi */
     [data-testid="stForm"] {
-        background-color: #FFFFFF !important;
+        background-color: #000000 !important;
         padding: 40px !important;
         border-radius: 15px !important;
         box-shadow: 0px 4px 12px rgba(0,0,0,0.1) !important;
@@ -87,3 +87,4 @@ elif st.session_state.get("authentication_status") is False:
 
 elif st.session_state.get("authentication_status") is None:
     st.warning('Silakan masukkan kredensial untuk mengakses dashboard.')
+

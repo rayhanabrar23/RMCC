@@ -5,6 +5,12 @@ from openpyxl import load_workbook
 from io import BytesIO
 from datetime import datetime
 
+
+# Cek apakah sudah login dari halaman utama
+if "login_status" not in st.session_state or not st.session_state["login_status"]:
+    st.error("🚨 Akses Ditolak! Silakan login di halaman utama terlebih dahulu.")
+    st.stop() # Hentikan aplikasi di sini
+    
 # ============================
 # KONSTANTA
 # ============================
@@ -231,4 +237,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 

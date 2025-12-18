@@ -34,32 +34,51 @@ st.markdown(
     <style>
     .stApp {{ {bg_img_style} background-size: cover; background-attachment: fixed; }}
     [data-testid="stSidebar"] {{ {sidebar_img_style} }}
+    
+    /* Membuat Kotak Login */
     [data-testid="stForm"] {{
         background-color: rgba(0, 0, 0, 0.8) !important;
         padding: 40px !important;
         border-radius: 15px !important;
         border: 1px solid #444 !important;
+        box-shadow: 0px 4px 20px rgba(0,0,0,0.5) !important;
     }}
+    
     button[kind="primaryFormSubmit"] {{
         background-color: #FFFFFF !important;
         color: black !important;
         font-weight: bold;
         width: 100% !important;
     }}
-    h1 {{ color: #FFFFFF !important; text-align: center; text-shadow: 2px 2px 4px rgba(0,0,0,0.7); }}
+    
+    h1 {{ 
+        color: #FFFFFF !important; 
+        text-align: center; 
+        font-weight: 800 !important;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.7); 
+    }}
+    
+    /* Warna teks sidebar agar putih */
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{ color: white !important; }}
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# --- 3. LOGIKA SIDEBAR ---
-if "login_status" not in st.session_state or st.session_state["login_status"] is not True:
-    st.markdown("<style>section[data-testid='stSidebar'] {display: none !important;}</style>", unsafe_allow_html=True)
+# --- 3. LOGIKA SIDEBAR AWAL (Sembunyikan jika belum login) ---
+if st.session_state.get("authentication_status") is not True:
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] { display: none !important; }
+        [data-testid="stSidebarNav"] { display: none !important; }
+        </style>
+        """, 
+        unsafe_allow_html=True
+    )
 
-# --- 4. LOAD KONFIGURASI DARI SECRETS (SOLUSI MANUAL RECURSIVE COPY) ---
+# --- 4. LOAD KONFIGURASI DARI SECRETS (Recursive Copy) ---
 def convert_secrets(secrets_obj):
-    """Mengonversi AttrDict Streamlit ke Dictionary murni secara rekursif"""
     new_dict = {}
     for key, value in secrets_obj.items():
         if isinstance(value, (dict, st.runtime.secrets.Secrets, st.runtime.secrets.AttrDict)):
@@ -69,12 +88,7 @@ def convert_secrets(secrets_obj):
     return new_dict
 
 if len(st.secrets) > 0:
-    try:
-        # Kita paksa bongkar objek AttrDict menjadi dict biasa
-        config = convert_secrets(st.secrets)
-    except Exception as e:
-        st.error(f"Gagal memproses Secrets: {e}")
-        st.stop()
+    config = convert_secrets(st.secrets)
 else:
     st.error("Konfigurasi Secrets tidak ditemukan!")
     st.stop()
@@ -91,19 +105,35 @@ authenticator = stauth.Authenticate(
 # --- 6. TAMPILAN DASHBOARD / LOGIN ---
 st.title("RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD")
 
+# Jalankan login (Otomatis cek cookie)
 name, authentication_status, username = authenticator.login('main')
 
 if st.session_state.get("authentication_status"):
     st.session_state["login_status"] = True
+    
+    # PAKSA SIDEBAR MUNCUL (Override CSS Sembunyi)
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] { display: block !important; }
+        [data-testid="stSidebarNav"] { display: block !important; }
+        </style>
+        """, 
+        unsafe_allow_html=True
+    )
+    
     with st.sidebar:
+        st.markdown("<br><br>", unsafe_allow_html=True)
         st.write(f"Selamat Datang, **{st.session_state['name']}**")
-        if st.button("Logout"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
+        
+        # Tombol Logout Bawaan
+        authenticator.logout('Logout', 'sidebar')
+
     st.success(f"Login Berhasil. Halo {st.session_state['name']}!")
-    st.info("Pilih menu di samping untuk melihat data.")
+    st.info("Pilih menu di samping untuk melihat data analisis.")
+
 elif st.session_state.get("authentication_status") is False:
     st.error('Username/Password salah')
+
 elif st.session_state.get("authentication_status") is None:
     st.warning('Silakan masukkan kredensial untuk mengakses dashboard.')

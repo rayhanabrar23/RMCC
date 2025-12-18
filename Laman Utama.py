@@ -7,41 +7,58 @@ from yaml.loader import SafeLoader
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD", layout="centered")
 
-# --- 2. STYLING (CSS CUSTOM) ---
-# Menghapus bagian background image, fokus ke tampilan form yang rapi
-st.markdown(
-    """
-    <style>
-    /* Mengatur warna latar belakang aplikasi menjadi abu-abu terang standar */
-    .stApp {
-        background-color: #000000;
-    }
+# --- FUNGSI HELPER BACKGROUND LOKAL ---
+def get_base64(bin_file):
+    with open(bin_file, 'rb') as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
 
-    /* Membuat Kotak Login Putih Solid & Rapi */
-    [data-testid="stForm"] {
-        background-color: #000000 !important;
+# Ganti 'background.jpg' dengan nama file gambar aslimu
+try:
+    bin_str = get_base64('background.jpg') 
+    bg_img_style = f"background-image: url('data:image/png;base64,{bin_str}');"
+except FileNotFoundError:
+    # Jika gambar tidak ketemu, fallback ke warna hitam seperti awal
+    bg_img_style = "background-color: #000000;"
+
+# --- 2. STYLING (CSS CUSTOM) ---
+st.markdown(
+    f"""
+    <style>
+    /* Mengatur Latar Belakang Aplikasi */
+    .stApp {{
+        {bg_img_style}
+        background-size: cover;
+        background-attachment: fixed;
+    }}
+
+    /* Membuat Kotak Login Agak Transparan agar Background Terlihat Cantik */
+    [data-testid="stForm"] {{
+        background-color: rgba(0, 0, 0, 0.8) !important; /* Hitam dengan transparansi 80% */
         padding: 40px !important;
         border-radius: 15px !important;
-        box-shadow: 0px 4px 12px rgba(0,0,0,0.1) !important;
-        border: none !important;
-    }
+        box-shadow: 0px 4px 20px rgba(0,0,0,0.5) !important;
+        border: 1px solid #444 !important;
+    }}
 
-    /* Tombol Login Warna Merah PEI */
-    button[kind="primaryFormSubmit"] {
+    /* Tombol Login */
+    button[kind="primaryFormSubmit"] {{
         background-color: #FFFFFF !important;
-        color: white !important;
+        color: black !important; /* Diubah ke hitam agar kontras dengan tombol putih */
         border-radius: 8px !important;
         width: 100% !important;
         border: none !important;
-    }
+        font-weight: bold;
+    }}
 
     /* Judul Dashboard */
-    h1 {
+    h1 {{
         color: #FFFFFF !important;
         text-align: center;
-        font-weight: 1500 !important;
+        font-weight: 800 !important;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.7); /* Agar judul terbaca meski bg terang */
         margin-bottom: 2rem !important;
-    }
+    }}
     </style>
     """,
     unsafe_allow_html=True
@@ -87,10 +104,3 @@ elif st.session_state.get("authentication_status") is False:
 
 elif st.session_state.get("authentication_status") is None:
     st.warning('Silakan masukkan kredensial untuk mengakses dashboard.')
-
-
-
-
-
-
-

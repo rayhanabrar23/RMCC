@@ -15,7 +15,7 @@ def get_base64(bin_file):
 
 # Ganti 'background.jpg' dengan nama file gambar aslimu
 try:
-    bin_str = get_base64('background') 
+    bin_str = get_base64('backgorund.jpg') 
     bg_img_style = f"background-image: url('data:image/png;base64,{bin_str}');"
 except FileNotFoundError:
     # Jika gambar tidak ketemu, fallback ke warna hitam seperti awal
@@ -104,4 +104,5 @@ elif st.session_state.get("authentication_status") is False:
 
 elif st.session_state.get("authentication_status") is None:
     st.warning('Silakan masukkan kredensial untuk mengakses dashboard.')
+
 

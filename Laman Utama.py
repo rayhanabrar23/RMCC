@@ -1,7 +1,6 @@
 import streamlit as st
 import streamlit_authenticator as stauth
 import base64
-import json # Library untuk memproses data rahasia dengan aman
 
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD", layout="centered")
@@ -15,23 +14,17 @@ def get_base64(bin_file):
     except FileNotFoundError:
         return None
 
-# Ambil data Base64 untuk Background Utama dan Sidebar
 bin_str_main = get_base64('background.png')
 bin_str_sidebar = get_base64('sidebar.png')
 
-# Logika CSS untuk Background Utama
+# Logika CSS Background
 if bin_str_main:
     bg_img_style = f"background-image: url('data:image/png;base64,{bin_str_main}');"
 else:
     bg_img_style = "background-color: #000000;"
 
-# Logika CSS untuk Sidebar
 if bin_str_sidebar:
-    sidebar_img_style = f"""
-        background-image: url("data:image/png;base64,{bin_str_sidebar}");
-        background-size: cover;
-        background-repeat: no-repeat;
-    """
+    sidebar_img_style = f"background-image: url('data:image/png;base64,{bin_str_sidebar}'); background-size: cover;"
 else:
     sidebar_img_style = "background-color: #111111;"
 
@@ -39,73 +32,51 @@ else:
 st.markdown(
     f"""
     <style>
-    /* Mengatur Latar Belakang Aplikasi Utama */
-    .stApp {{
-        {bg_img_style}
-        background-size: cover;
-        background-attachment: fixed;
-    }}
-
-    /* Mengatur Latar Belakang Sidebar */
-    [data-testid="stSidebar"] {{
-        {sidebar_img_style}
-    }}
-
-    /* Membuat Kotak Login Agak Transparan */
+    .stApp {{ {bg_img_style} background-size: cover; background-attachment: fixed; }}
+    [data-testid="stSidebar"] {{ {sidebar_img_style} }}
     [data-testid="stForm"] {{
         background-color: rgba(0, 0, 0, 0.8) !important;
         padding: 40px !important;
         border-radius: 15px !important;
-        box-shadow: 0px 4px 20px rgba(0,0,0,0.5) !important;
         border: 1px solid #444 !important;
     }}
-
-    /* Tombol Login */
     button[kind="primaryFormSubmit"] {{
         background-color: #FFFFFF !important;
         color: black !important;
-        border-radius: 8px !important;
-        width: 100% !important;
-        border: none !important;
         font-weight: bold;
+        width: 100% !important;
     }}
-
-    /* Judul Dashboard */
-    h1 {{
-        color: #FFFFFF !important;
-        text-align: center;
-        font-weight: 800 !important;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
-        margin-bottom: 2rem !important;
-    }}
-
-    /* Memastikan teks sidebar tetap terbaca (Putih) */
-    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{
-        color: white !important;
-    }}
+    h1 {{ color: #FFFFFF !important; text-align: center; text-shadow: 2px 2px 4px rgba(0,0,0,0.7); }}
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{ color: white !important; }}
     </style>
     """,
     unsafe_allow_html=True
 )
 
 # --- 3. LOGIKA SIDEBAR ---
-# Sembunyikan sidebar secara paksa jika belum login
 if "login_status" not in st.session_state or st.session_state["login_status"] is not True:
     st.markdown("<style>section[data-testid='stSidebar'] {display: none !important;}</style>", unsafe_allow_html=True)
 
-# --- 4. LOAD KONFIGURASI DARI SECRETS (SOLUSI ANTI-ERROR) ---
+# --- 4. LOAD KONFIGURASI DARI SECRETS (SOLUSI MANUAL RECURSIVE COPY) ---
+def convert_secrets(secrets_obj):
+    """Mengonversi AttrDict Streamlit ke Dictionary murni secara rekursif"""
+    new_dict = {}
+    for key, value in secrets_obj.items():
+        if isinstance(value, (dict, st.runtime.secrets.Secrets, st.runtime.secrets.AttrDict)):
+            new_dict[key] = convert_secrets(value)
+        else:
+            new_dict[key] = value
+    return new_dict
+
 if len(st.secrets) > 0:
-    # Teknik memutus proteksi read-only Streamlit:
-    # Mengonversi secrets menjadi dictionary murni via JSON
     try:
-        # Gunakan to_dict() jika tersedia, jika tidak gunakan dict biasa
-        raw_data = st.secrets.to_dict() if hasattr(st.secrets, "to_dict") else dict(st.secrets)
-        config = json.loads(json.dumps(raw_data))
+        # Kita paksa bongkar objek AttrDict menjadi dict biasa
+        config = convert_secrets(st.secrets)
     except Exception as e:
         st.error(f"Gagal memproses Secrets: {e}")
         st.stop()
 else:
-    st.error("Konfigurasi Secrets tidak ditemukan di dashboard Streamlit!")
+    st.error("Konfigurasi Secrets tidak ditemukan!")
     st.stop()
 
 # --- 5. AUTHENTICATOR ---
@@ -120,25 +91,19 @@ authenticator = stauth.Authenticate(
 # --- 6. TAMPILAN DASHBOARD / LOGIN ---
 st.title("RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD")
 
-# Menjalankan fungsi login
 name, authentication_status, username = authenticator.login('main')
 
 if st.session_state.get("authentication_status"):
     st.session_state["login_status"] = True
-    
     with st.sidebar:
         st.write(f"Selamat Datang, **{st.session_state['name']}**")
         if st.button("Logout"):
-            # Menghapus semua session state saat logout
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
-
     st.success(f"Login Berhasil. Halo {st.session_state['name']}!")
     st.info("Pilih menu di samping untuk melihat data.")
-
 elif st.session_state.get("authentication_status") is False:
     st.error('Username/Password salah')
-
 elif st.session_state.get("authentication_status") is None:
     st.warning('Silakan masukkan kredensial untuk mengakses dashboard.')

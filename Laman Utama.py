@@ -9,32 +9,52 @@ st.set_page_config(page_title="RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD", la
 
 # --- FUNGSI HELPER BACKGROUND LOKAL ---
 def get_base64(bin_file):
-    with open(bin_file, 'rb') as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
+    try:
+        with open(bin_file, 'rb') as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+    except FileNotFoundError:
+        return None
 
-# Ganti 'background.jpg' dengan nama file gambar aslimu
-try:
-    bin_str = get_base64('background.png') 
-    bg_img_style = f"background-image: url('data:image/png;base64,{bin_str}');"
-except FileNotFoundError:
-    # Jika gambar tidak ketemu, fallback ke warna hitam seperti awal
+# Ambil data Base64 untuk Background Utama dan Sidebar
+bin_str_main = get_base64('background.png')
+bin_str_sidebar = get_base64('sidebar.png')
+
+# Logika CSS untuk Background Utama
+if bin_str_main:
+    bg_img_style = f"background-image: url('data:image/png;base64,{bin_str_main}');"
+else:
     bg_img_style = "background-color: #000000;"
+
+# Logika CSS untuk Sidebar
+if bin_str_sidebar:
+    sidebar_img_style = f"""
+        background-image: url("data:image/png;base64,{bin_str_sidebar}");
+        background-size: cover;
+        background-repeat: no-repeat;
+    """
+else:
+    sidebar_img_style = "background-color: #111111;"
 
 # --- 2. STYLING (CSS CUSTOM) ---
 st.markdown(
     f"""
     <style>
-    /* Mengatur Latar Belakang Aplikasi */
+    /* Mengatur Latar Belakang Aplikasi Utama */
     .stApp {{
         {bg_img_style}
         background-size: cover;
         background-attachment: fixed;
     }}
 
-    /* Membuat Kotak Login Agak Transparan agar Background Terlihat Cantik */
+    /* Mengatur Latar Belakang Sidebar */
+    [data-testid="stSidebar"] {{
+        {sidebar_img_style}
+    }}
+
+    /* Membuat Kotak Login Agak Transparan */
     [data-testid="stForm"] {{
-        background-color: rgba(0, 0, 0, 0.8) !important; /* Hitam dengan transparansi 80% */
+        background-color: rgba(0, 0, 0, 0.8) !important;
         padding: 40px !important;
         border-radius: 15px !important;
         box-shadow: 0px 4px 20px rgba(0,0,0,0.5) !important;
@@ -44,7 +64,7 @@ st.markdown(
     /* Tombol Login */
     button[kind="primaryFormSubmit"] {{
         background-color: #FFFFFF !important;
-        color: black !important; /* Diubah ke hitam agar kontras dengan tombol putih */
+        color: black !important;
         border-radius: 8px !important;
         width: 100% !important;
         border: none !important;
@@ -56,8 +76,13 @@ st.markdown(
         color: #FFFFFF !important;
         text-align: center;
         font-weight: 800 !important;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.7); /* Agar judul terbaca meski bg terang */
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
         margin-bottom: 2rem !important;
+    }}
+
+    /* Memastikan teks sidebar tetap terbaca (Putih) */
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{
+        color: white !important;
     }}
     </style>
     """,
@@ -104,7 +129,3 @@ elif st.session_state.get("authentication_status") is False:
 
 elif st.session_state.get("authentication_status") is None:
     st.warning('Silakan masukkan kredensial untuk mengakses dashboard.')
-
-
-
-

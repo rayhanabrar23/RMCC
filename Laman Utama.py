@@ -93,9 +93,9 @@ if "login_status" not in st.session_state or st.session_state["login_status"] is
     st.markdown("<style>section[data-testid='stSidebar'] {display: none !important;}</style>", unsafe_allow_html=True)
 
 # --- 4. LOAD KONFIGURASI DARI SECRETS ---
-# PENTING: Gunakan .to_dict() untuk menghindari TypeError pada Streamlit Cloud
-if "credentials" in st.secrets:
-    config = st.secrets.to_dict()
+# Menggunakan dict() untuk menyalin Secrets agar bisa dimodifikasi oleh library Authenticator
+if len(st.secrets) > 0:
+    config = dict(st.secrets)
 else:
     st.error("Konfigurasi Secrets tidak ditemukan di dashboard Streamlit!")
     st.stop()

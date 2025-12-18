@@ -88,13 +88,17 @@ st.markdown(
 )
 
 # --- 3. LOGIKA SIDEBAR ---
-# Sidebar disembunyikan jika belum login
+# Sembunyikan sidebar secara paksa jika belum login
 if "login_status" not in st.session_state or st.session_state["login_status"] is not True:
     st.markdown("<style>section[data-testid='stSidebar'] {display: none !important;}</style>", unsafe_allow_html=True)
 
 # --- 4. LOAD KONFIGURASI DARI SECRETS ---
-# Mengambil data dari Secrets (TOML) yang sudah kamu isi di dashboard Streamlit
-config = st.secrets
+# PENTING: Gunakan .to_dict() untuk menghindari TypeError pada Streamlit Cloud
+if "credentials" in st.secrets:
+    config = st.secrets.to_dict()
+else:
+    st.error("Konfigurasi Secrets tidak ditemukan di dashboard Streamlit!")
+    st.stop()
 
 # --- 5. AUTHENTICATOR ---
 authenticator = stauth.Authenticate(
@@ -108,7 +112,7 @@ authenticator = stauth.Authenticate(
 # --- 6. TAMPILAN DASHBOARD / LOGIN ---
 st.title("RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD")
 
-# Menjalankan fungsi login
+# Parameter 'main' menempatkan form login di area utama aplikasi
 name, authentication_status, username = authenticator.login('main')
 
 if st.session_state.get("authentication_status"):
@@ -117,6 +121,7 @@ if st.session_state.get("authentication_status"):
     with st.sidebar:
         st.write(f"Selamat Datang, **{st.session_state['name']}**")
         if st.button("Logout"):
+            # Menghapus semua session state saat logout
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()

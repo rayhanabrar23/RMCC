@@ -3,6 +3,15 @@ import streamlit as st
 if "login_status" not in st.session_state or not st.session_state["login_status"]:
     st.error("🚨 Akses Ditolak! Silakan login di halaman utama terlebih dahulu.")
     st.stop() # Hentikan aplikasi di sini
+from style_utils import apply_custom_style
+
+# Panggil fungsi gaya
+apply_custom_style()
+
+# Cek apakah user sudah login (Proteksi Halaman)
+if "login_status" not in st.session_state or not st.session_state["login_status"]:
+    st.warning("Silakan login terlebih dahulu di halaman utama.")
+    st.stop()
 import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
@@ -235,6 +244,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 

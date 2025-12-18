@@ -1,8 +1,6 @@
 import streamlit as st
 import streamlit_authenticator as stauth
-import yaml
 import base64
-from yaml.loader import SafeLoader
 
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD", layout="centered")
@@ -90,25 +88,27 @@ st.markdown(
 )
 
 # --- 3. LOGIKA SIDEBAR ---
+# Sidebar disembunyikan jika belum login
 if "login_status" not in st.session_state or st.session_state["login_status"] is not True:
     st.markdown("<style>section[data-testid='stSidebar'] {display: none !important;}</style>", unsafe_allow_html=True)
 
-# --- 4. LOAD KONFIGURASI ---
-with open('config.yaml') as file:
-    config = yaml.load(file, Loader=SafeLoader)
+# --- 4. LOAD KONFIGURASI DARI SECRETS ---
+# Mengambil data dari Secrets (TOML) yang sudah kamu isi di dashboard Streamlit
+config = st.secrets
 
 # --- 5. AUTHENTICATOR ---
 authenticator = stauth.Authenticate(
     config['credentials'],
-    "RMCC_v101", 
-    "signature_key_secret", 
-    0, 
+    config['cookie']['name'], 
+    config['cookie']['key'], 
+    config['cookie']['expiry_days'],
     config['preauthorized']
 )
 
 # --- 6. TAMPILAN DASHBOARD / LOGIN ---
 st.title("RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD")
 
+# Menjalankan fungsi login
 name, authentication_status, username = authenticator.login('main')
 
 if st.session_state.get("authentication_status"):

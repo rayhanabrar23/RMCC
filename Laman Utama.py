@@ -1,7 +1,7 @@
 import streamlit as st
 import streamlit_authenticator as stauth
 import base64
-import copy  # Tambahkan library ini untuk duplikasi data secara mendalam
+import json # Library untuk memproses data rahasia dengan aman
 
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD", layout="centered")
@@ -39,14 +39,19 @@ else:
 st.markdown(
     f"""
     <style>
+    /* Mengatur Latar Belakang Aplikasi Utama */
     .stApp {{
         {bg_img_style}
         background-size: cover;
         background-attachment: fixed;
     }}
+
+    /* Mengatur Latar Belakang Sidebar */
     [data-testid="stSidebar"] {{
         {sidebar_img_style}
     }}
+
+    /* Membuat Kotak Login Agak Transparan */
     [data-testid="stForm"] {{
         background-color: rgba(0, 0, 0, 0.8) !important;
         padding: 40px !important;
@@ -54,6 +59,8 @@ st.markdown(
         box-shadow: 0px 4px 20px rgba(0,0,0,0.5) !important;
         border: 1px solid #444 !important;
     }}
+
+    /* Tombol Login */
     button[kind="primaryFormSubmit"] {{
         background-color: #FFFFFF !important;
         color: black !important;
@@ -62,6 +69,8 @@ st.markdown(
         border: none !important;
         font-weight: bold;
     }}
+
+    /* Judul Dashboard */
     h1 {{
         color: #FFFFFF !important;
         text-align: center;
@@ -69,6 +78,8 @@ st.markdown(
         text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
         margin-bottom: 2rem !important;
     }}
+
+    /* Memastikan teks sidebar tetap terbaca (Putih) */
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{
         color: white !important;
     }}
@@ -78,17 +89,23 @@ st.markdown(
 )
 
 # --- 3. LOGIKA SIDEBAR ---
+# Sembunyikan sidebar secara paksa jika belum login
 if "login_status" not in st.session_state or st.session_state["login_status"] is not True:
     st.markdown("<style>section[data-testid='stSidebar'] {display: none !important;}</style>", unsafe_allow_html=True)
 
-# --- 4. LOAD KONFIGURASI DARI SECRETS (FIXED) ---
-# Menggunakan deepcopy agar library stauth bebas mengubah data tanpa error 'read-only'
+# --- 4. LOAD KONFIGURASI DARI SECRETS (SOLUSI ANTI-ERROR) ---
 if len(st.secrets) > 0:
-    # Kita ambil dictionary murni dari secrets
-    raw_config = st.secrets.to_dict() if hasattr(st.secrets, "to_dict") else dict(st.secrets)
-    config = copy.deepcopy(raw_config)
+    # Teknik memutus proteksi read-only Streamlit:
+    # Mengonversi secrets menjadi dictionary murni via JSON
+    try:
+        # Gunakan to_dict() jika tersedia, jika tidak gunakan dict biasa
+        raw_data = st.secrets.to_dict() if hasattr(st.secrets, "to_dict") else dict(st.secrets)
+        config = json.loads(json.dumps(raw_data))
+    except Exception as e:
+        st.error(f"Gagal memproses Secrets: {e}")
+        st.stop()
 else:
-    st.error("Konfigurasi Secrets tidak ditemukan!")
+    st.error("Konfigurasi Secrets tidak ditemukan di dashboard Streamlit!")
     st.stop()
 
 # --- 5. AUTHENTICATOR ---
@@ -103,19 +120,25 @@ authenticator = stauth.Authenticate(
 # --- 6. TAMPILAN DASHBOARD / LOGIN ---
 st.title("RISK MANAGEMENT AND CREDIT CONTROL DASHBOARD")
 
+# Menjalankan fungsi login
 name, authentication_status, username = authenticator.login('main')
 
 if st.session_state.get("authentication_status"):
     st.session_state["login_status"] = True
+    
     with st.sidebar:
         st.write(f"Selamat Datang, **{st.session_state['name']}**")
         if st.button("Logout"):
+            # Menghapus semua session state saat logout
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
+
     st.success(f"Login Berhasil. Halo {st.session_state['name']}!")
     st.info("Pilih menu di samping untuk melihat data.")
+
 elif st.session_state.get("authentication_status") is False:
     st.error('Username/Password salah')
+
 elif st.session_state.get("authentication_status") is None:
     st.warning('Silakan masukkan kredensial untuk mengakses dashboard.')

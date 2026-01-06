@@ -6,167 +6,135 @@ from io import BytesIO
 from datetime import datetime
 
 # ===============================================================
-# 1. KONFIGURASI HALAMAN (WAJIB PALING ATAS)
+# 1. KONFIGURASI HALAMAN
 # ===============================================================
 st.set_page_config(page_title="HC CL Updater", layout="wide")
 
-# ===============================================================
-# 2. PROTEKSI HALAMAN & STYLE
-# ===============================================================
-
-# Simulasi login status (Pastikan session_state ini diatur di main app Anda)
+# Login Check
 if "login_status" not in st.session_state:
-    st.session_state["login_status"] = True  # Ubah ke False jika ingin proteksi aktif
+    st.session_state["login_status"] = True 
 
 if not st.session_state["login_status"]:
-    st.error("🚨 Akses Ditolak! Silakan login di halaman utama terlebih dahulu.")
+    st.error("🚨 Akses Ditolak! Silakan login terlebih dahulu.")
     st.stop()
 
 # ============================
-# 3. KONFIGURASI GLOBAL CL
+# 2. KONFIGURASI GLOBAL
 # ============================
 COL_KODE = 'KODE EFEK'
 COL_RMCC = 'CONCENTRATION LIMIT USULAN RMCC'
+COL_LISTED = 'CONCENTRATION LIMIT TERKENA % LISTED SHARES'
+COL_FF = 'CONCENTRATION LIMIT TERKENA % FREE FLOAT'
 COL_PERHITUNGAN = 'CONCENTRATION LIMIT SESUAI PERHITUNGAN'
-THRESHOLD_5M = 5_000_000_000
-KODE_EFEK_KHUSUS = ['LPKR', 'MLPL', 'NOBU', 'PTPP', 'SILO']
+
 OVERRIDE_MAPPING = {
-    'LPKR': 10_000_000_000, 
-    'MLPL': 10_000_000_000,
-    'NOBU': 10_000_000_000, 
-    'PTPP': 50_000_000_000, 
-    'SILO': 10_000_000_000
+    'LPKR': 10_000_000_000, 'MLPL': 10_000_000_000,
+    'NOBU': 10_000_000_000, 'PTPP': 50_000_000_000, 'SILO': 10_000_000_000
 }
 
 # ============================
-# 4. FUNGSI LOGIKA PERHITUNGAN
+# 3. FUNGSI INTI (LOGIKA & EXCEL)
 # ============================
 
-def calculate_concentration_limit(df_source: pd.DataFrame) -> pd.DataFrame:
-    """Mengolah data CL berdasarkan aturan bisnis."""
-    df = df_source.copy()
+def calculate_concentration_limit(df):
+    """Fungsi perhitungan lengkap"""
+    df_hasil = df.copy()
     
-    # Pastikan kolom yang dibutuhkan ada
-    if COL_KODE not in df.columns or COL_RMCC not in df.columns:
-        st.error(f"File sumber harus memiliki kolom '{COL_KODE}' dan '{COL_RMCC}'")
-        st.stop()
+    # Pastikan kolom RMCC ada, jika tidak buat kolom dummy 0
+    if COL_RMCC not in df_hasil.columns:
+        df_hasil[COL_RMCC] = 0
 
-    def logic_cl(row):
-        kode = str(row[COL_KODE]).strip()
-        usulan_rmcc = row[COL_RMCC]
-        
-        # 1. Cek jika masuk dalam daftar override khusus
+    def apply_logic(row):
+        kode = str(row.get(COL_KODE, '')).strip()
+        # Jika ada di daftar override
         if kode in OVERRIDE_MAPPING:
             return OVERRIDE_MAPPING[kode]
-        
-        # 2. Logika default (Contoh: minimal 5M atau sesuai usulan)
-        return max(usulan_rmcc, THRESHOLD_5M) if pd.notnull(usulan_rmcc) else THRESHOLD_5M
+        # Jika tidak, ambil dari RMCC
+        return row.get(COL_RMCC, 0)
 
-    df[COL_PERHITUNGAN] = df.apply(logic_cl, axis=1)
-    return df
+    df_hasil[COL_PERHITUNGAN] = df_hasil.apply(apply_logic, axis=1)
+    
+    # Tambahkan kolom lain jika belum ada (agar tidak error saat update excel)
+    for col in [COL_LISTED, COL_FF]:
+        if col not in df_hasil.columns:
+            df_hasil[col] = 0
+            
+    return df_hasil
 
-def update_excel_template(file_template: BytesIO, df_cl_hasil: pd.DataFrame) -> BytesIO:
-    """Mengupdate sheet 'CONC' pada template Excel."""
-    # Load workbook dari file yang diupload
+def update_excel_template(file_template, df_hasil):
+    """Proses penulisan ke Excel dengan penanganan buffer yang benar"""
+    # 1. Buat buffer baru
+    output = BytesIO()
+    
+    # 2. Load template
     wb = load_workbook(file_template)
     
-    # Pilih sheet 'CONC' (atau buat jika tidak ada untuk mencegah error)
+    # 3. Update Sheet CONC
     if 'CONC' in wb.sheetnames:
         ws = wb['CONC']
-    else:
-        ws = wb.create_sheet('CONC')
-        st.warning("Sheet 'CONC' tidak ditemukan, sistem membuat sheet baru.")
-
-    # Tulis Header (Opsional)
-    headers = df_cl_hasil.columns.tolist()
-    for col_num, column_title in enumerate(headers, 1):
-        ws.cell(row=1, column=col_num, value=column_title)
-
-    # Tulis Data dari DataFrame
-    for r_idx, row in enumerate(df_cl_hasil.values, start=2):
-        for c_idx, value in enumerate(row, start=1):
-            # Mengonversi numpy types ke standar python agar openpyxl tidak error
-            if isinstance(value, (np.int64, np.float64)):
-                value = float(value)
-            ws.cell(row=r_idx, column=c_idx, value=value)
-
-    # Simpan hasil ke buffer
-    output_buffer = BytesIO()
-    wb.save(output_buffer)
-    output_buffer.seek(0)
-    return output_buffer
+        # Tulis Header
+        for c_idx, column_title in enumerate(df_hasil.columns, 1):
+            ws.cell(row=1, column=c_idx, value=column_title)
+        
+        # Tulis Data
+        for r_idx, row in enumerate(df_hasil.values, start=2):
+            for c_idx, value in enumerate(row, start=1):
+                # Handle numpy types agar tidak error saat save
+                if isinstance(value, (np.int64, np.float64)):
+                    value = float(value)
+                ws.cell(row=r_idx, column=c_idx, value=value)
+    
+    # 4. Simpan ke buffer
+    wb.save(output)
+    output.seek(0)
+    return output
 
 # ============================
-# 5. ANTARMUKA STREAMLIT
+# 4. ANTARMUKA STREAMLIT (UI)
 # ============================
 
 def main():
-    st.title("🛡️ Concentration Limit (CL) & Haircut Calculation Updater")
+    st.title("🛡️ HC CL Updater Professional")
     st.markdown("---")
-    
-    current_month_name = datetime.now().strftime('%B').lower()
-    
-    st.markdown("""
-    **Instruksi:** 1. Unggah **File Sumber** (Data mentah hasil perhitungan).
-    2. Unggah **File Template** (File tujuan yang ingin diisi datanya).
-    3. Klik tombol Jalankan untuk memproses.
-    """)
 
     col1, col2 = st.columns(2)
-
     with col1:
-        uploaded_file_cl_source = st.file_uploader(
-            "1. Unggah File Sumber Data CL (Input)",
-            type=['xlsx'],
-            key='cl_source'
-        )
-
+        source_file = st.file_uploader("Upload File Sumber (XLSX)", type=['xlsx'])
     with col2:
-        uploaded_file_cl_template = st.file_uploader(
-            "2. Unggah File Template Output (Tujuan)",
-            type=['xlsx'],
-            key='cl_template'
-        )
+        template_file = st.file_uploader("Upload Template Target (XLSX)", type=['xlsx'])
 
-    st.markdown("---")
-
-    if uploaded_file_cl_source is not None and uploaded_file_cl_template is not None:
-        if st.button("🚀 Jalankan Perhitungan & Update Template Excel", type="primary"):
+    if source_file and template_file:
+        if st.button("🚀 Jalankan Proses Update", type="primary"):
             try:
-                # 1. BACA FILE SUMBER
-                df_cl_source = pd.read_excel(uploaded_file_cl_source, engine='openpyxl')
+                # Proses 1: Baca
+                df_input = pd.read_excel(source_file)
                 
-                # 2. JALANKAN PERHITUNGAN
-                with st.spinner('Menghitung Concentration Limit...'):
-                    df_cl_hasil = calculate_concentration_limit(df_cl_source)
+                # Proses 2: Hitung
+                with st.spinner("Menghitung data..."):
+                    df_final = calculate_concentration_limit(df_input)
+                
+                # Proses 3: Update Excel
+                with st.spinner("Menyusun file Excel..."):
+                    # Reset pointer file template
+                    template_file.seek(0)
+                    processed_file = update_excel_template(template_file, df_final)
+                
+                st.success("✅ Berhasil! File siap diunduh.")
+                
+                # Preview
+                st.dataframe(df_final.head(10))
 
-                st.success("✅ Perhitungan Selesai.")
-                st.write("Preview Hasil (5 baris teratas):")
-                st.dataframe(df_cl_hasil.head())
-
-                # 3. UPDATE TEMPLATE
-                with st.spinner('⏳ Mengupdate File Template Excel...'):
-                    # PENTING: Reset pointer template agar bisa dibaca ulang
-                    uploaded_file_cl_template.seek(0)
-                    output_buffer_template = update_excel_template(uploaded_file_cl_template, df_cl_hasil)
-                
-                st.success("🎉 File Berhasil Di-update!")
-                
-                dynamic_filename_output = f'clhc_updated_{current_month_name}.xlsx' 
-                
+                # Download Button
                 st.download_button(
-                    label="⬇️ Unduh Hasil Update (.xlsx)",
-                    data=output_buffer_template,
-                    file_name=dynamic_filename_output, 
-                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    label="⬇️ Download Updated Excel",
+                    data=processed_file,
+                    file_name=f"Update_CL_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-                
+
             except Exception as e:
-                st.error(f"❌ Detail Error: {e}")
+                st.error(f"Terjadi Kesalahan: {e}")
                 st.exception(e)
 
-    elif uploaded_file_cl_source is None or uploaded_file_cl_template is None:
-        st.info("⬆️ Silakan unggah kedua file di atas untuk mengaktifkan tombol proses.")
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

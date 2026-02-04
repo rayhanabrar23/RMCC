@@ -6,14 +6,23 @@ from io import BytesIO
 from datetime import datetime
 
 # ===============================================================
-# 1. PROTEKSI LOGIN & STYLE (Sesuai Code Kamu)
+# 1. PROTEKSI LOGIN & KONFIGURASI HALAMAN
 # ===============================================================
+st.set_page_config(page_title="HCCL Integrator Pro", layout="wide")
+
 if "login_status" not in st.session_state or not st.session_state["login_status"]:
     st.error("🚨 Akses Ditolak! Silakan login di halaman utama terlebih dahulu.")
     st.stop()
 
+# Jika ada file style_utils
+try:
+    from style_utils import apply_custom_style
+    apply_custom_style()
+except ImportError:
+    pass
+
 # ===============================================================
-# 2. KONFIGURASI GLOBAL (Sesuai Code Kamu)
+# 2. KONFIGURASI GLOBAL (LOGIKA ASLI)
 # ===============================================================
 COL_RMCC = 'CONCENTRATION LIMIT USULAN RMCC'
 COL_LISTED = 'CONCENTRATION LIMIT TERKENA % LISTED SHARES'
@@ -29,7 +38,7 @@ TARGET_100 = 100.0
 TOLERANCE = 1e-6 
 
 # ===============================================================
-# 3. FUNGSI LOGIKA ASLI (TIDAK ADA YANG DIUBAH)
+# 3. FUNGSI LOGIKA PERHITUNGAN (LOGIKA ASLI KAMU)
 # ===============================================================
 
 def calc_concentration_limit_listed(row):
@@ -77,7 +86,8 @@ def keterangan_uma(uma_date):
 
 def calculate_concentration_limit(df_cl_source):
     df = df_cl_source.copy()
-    if 'KODE EFEK' not in df.columns: df = df.rename(columns={df.columns[0]: 'KODE EFEK'})
+    if 'KODE EFEK' not in df.columns: 
+        df = df.rename(columns={df.columns[0]: 'KODE EFEK'})
     df['KODE EFEK'] = df['KODE EFEK'].astype(str).str.strip()
     
     df['SAHAM MARJIN BARU?'] = df['SAHAM MARJIN BARU?'].astype(str).str.upper().str.strip()
@@ -105,7 +115,7 @@ def calculate_concentration_limit(df_cl_source):
     df['PERTIMBANGAN DIVISI (HAIRCUT)'] = df['UMA'].apply(keterangan_uma)
     df['PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Sesuai metode perhitungan'
 
-    # --- LOGIKA MASKER REVISI FINAL (SESUAI CODE ASLI KAMU) ---
+    # --- LOGIKA MASKER PRIORITAS ---
     mask_emiten = df['KODE EFEK'].isin(KODE_EFEK_KHUSUS)
     mask_nol_final = (df[COL_RMCC] == 0) & (~mask_emiten)
     mask_lt5m_strict = ((df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].fillna(np.inf) < THRESHOLD_5M) | (df[COL_PERHITUNGAN].fillna(np.inf) < THRESHOLD_5M) | (df[COL_LISTED].fillna(np.inf) < THRESHOLD_5M) | (df[COL_FF].fillna(np.inf) < THRESHOLD_5M) | (df[COL_RMCC].fillna(np.inf) < THRESHOLD_5M)) & mask_nol_final 
@@ -120,7 +130,6 @@ def calculate_concentration_limit(df_cl_source):
     mask_marjin_baru = mask_other_non_nol & (df[COL_RMCC].round(0) == df['CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'].round(0)) & (df['SAHAM MARJIN BARU?'] == 'YA') & (~mask_listed_saja) & (~mask_ff_saja)
     mask_listed_ff_upgrade = (mask_listed_saja | mask_ff_saja) & mask_kriteria_listed & mask_kriteria_ff
 
-    # Penerapan Keterangan (Prioritas)
     df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Batas Konsentrasi < Rp5 Miliar'
     df.loc[mask_lt5m_strict, 'PERTIMBANGAN DIVISI (HAIRCUT)'] = 'Penyesuaian karena Batas Konsentrasi 0'
     df.loc[mask_hc100_origin, 'PERTIMBANGAN DIVISI (CONC LIMIT)'] = 'Penyesuaian karena Haircut PEI 100%'
@@ -135,41 +144,47 @@ def calculate_concentration_limit(df_cl_source):
     return df
 
 # ===============================================================
-# 4. FUNGSI INJECTOR (PEMINDAH KE TEMPLATE)
+# 4. FUNGSI INJECTOR (PINDAH KE TEMPLATE EXCEL)
 # ===============================================================
 
 def update_excel_template(file_template, df_hasil):
     output = BytesIO()
     wb = load_workbook(file_template)
     
-    # Ambil sheet sesuai permintaan kamu
+    # Pastikan Sheet Ada
+    if "HC" not in wb.sheetnames or "CONC" not in wb.sheetnames:
+        raise ValueError("Template harus memiliki sheet bernama 'HC' dan 'CONC'")
+        
     ws_hc = wb["HC"]
     ws_conc = wb["CONC"]
 
-    # Kita loop data hasil dan masukkan ke baris mulai dari 5
+    # Loop data hasil (start=5 sesuai instruksi baris ke-5)
     for i, row in enumerate(df_hasil.to_dict('records'), start=5):
         # --- SHEET HC ---
-        ws_hc.cell(row=i, column=3, value=row.get('KODE EFEK'))                   # C5
-        ws_hc.cell(row=i, column=18, value=row.get('HAIRCUT PEI USULAN DIVISI'))  # R5
-        ws_hc.cell(row=i, column=20, value=row.get('PERTIMBANGAN DIVISI (HAIRCUT)')) # T5
+        ws_hc.cell(row=i, column=3, value=row.get('KODE EFEK'))                   # C
+        ws_hc.cell(row=i, column=18, value=row.get('HAIRCUT PEI USULAN DIVISI'))  # R
+        ws_hc.cell(row=i, column=20, value=row.get('PERTIMBANGAN DIVISI (HAIRCUT)')) # T
 
         # --- SHEET CONC ---
-        ws_conc.cell(row=i, column=3, value=row.get('KODE EFEK'))                 # C5
-        ws_conc.cell(row=i, column=19, value=row.get(COL_RMCC))                   # S5
-        ws_conc.cell(row=i, column=22, value=row.get('PERTIMBANGAN DIVISI (CONC LIMIT)')) # V5
+        ws_conc.cell(row=i, column=3, value=row.get('KODE EFEK'))                 # C
+        ws_conc.cell(row=i, column=16, value=row.get('CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU')) # P
+        ws_conc.cell(row=i, column=17, value=row.get('CONCENTRATION LIMIT TERKENA % LISTED SHARES'))   # Q
+        ws_conc.cell(row=i, column=18, value=row.get('CONCENTRATION LIMIT TERKENA % FREE FLOAT'))     # R
+        ws_conc.cell(row=i, column=19, value=row.get(COL_RMCC))                   # S
+        ws_conc.cell(row=i, column=22, value=row.get('PERTIMBANGAN DIVISI (CONC LIMIT)')) # V
 
     wb.save(output)
     output.seek(0)
     return output
 
 # ===============================================================
-# 5. ANTARMUKA UTAMA (STREAMLIT UI)
+# 5. ANTARMUKA STREAMLIT
 # ===============================================================
 
 def main():
-    st.title("🛡️ HC & CL Professional Integrator")
+    st.title("🛡️ HCCL Professional Data Integrator")
     st.markdown("---")
-
+    
     col1, col2 = st.columns(2)
     with col1:
         source_file = st.file_uploader("1. Upload Raw Data (XLSX)", type=['xlsx'])
@@ -177,30 +192,34 @@ def main():
         template_file = st.file_uploader("2. Upload Template Target (XLSX)", type=['xlsx'])
 
     if source_file and template_file:
-        if st.button("🚀 Jalankan Proses Integrasi", type="primary"):
+        if st.button("🚀 Proses & Update Template", type="primary"):
             try:
-                # Proses 1: Hitung sesuai logika asli kamu
+                # 1. Baca & Hitung
                 df_input = pd.read_excel(source_file)
-                with st.spinner("Menghitung Data..."):
+                with st.spinner("Menghitung logika HC & CL..."):
                     df_final = calculate_concentration_limit(df_input)
                 
-                # Proses 2: Pindahkan ke Template
-                with st.spinner("Mengisi Template Excel..."):
+                # 2. Update Template
+                with st.spinner("Menyuntikkan data ke file template..."):
                     template_file.seek(0)
                     processed_file = update_excel_template(template_file, df_final)
                 
                 st.success("✅ Berhasil! Data telah dihitung dan dipindahkan ke template.")
-                st.dataframe(df_final[['KODE EFEK', COL_RMCC, 'HAIRCUT PEI USULAN DIVISI']].head())
+                
+                # Preview Tabel
+                st.subheader("Preview Hasil Perhitungan")
+                st.dataframe(df_final[['KODE EFEK', COL_RMCC, 'HAIRCUT PEI USULAN DIVISI']].head(10))
 
-                # Download Button
+                # Download
                 st.download_button(
-                    label="⬇️ Download Updated Excel Template",
+                    label="⬇️ Download Updated Excel",
                     data=processed_file,
-                    file_name=f"HCCL_Updated_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    file_name=f"Updated_Template_{datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             except Exception as e:
                 st.error(f"❌ Terjadi Kesalahan: {e}")
+                st.exception(e)
 
 if __name__ == '__main__':
     main()

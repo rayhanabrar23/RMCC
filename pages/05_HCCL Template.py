@@ -1,57 +1,63 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+from openpyxl import load_workbook
 
 st.set_page_config(page_title="CSV to Excel Merger", layout="wide")
 
-st.title("📊 Margin Trades Merger (CSV Version)")
-st.markdown("Gabungkan data harian **.csv** ke dalam template **.xlsx**.")
+st.title("📊 Margin Trades Merger (Template Safe)")
 
-# Layout kolom untuk upload
 col1, col2 = st.columns(2)
-
 with col1:
     template_file = st.file_uploader("1. Upload Template (Excel)", type=['xlsx'])
-
 with col2:
     daily_files = st.file_uploader("2. Upload File CSV Harian", type=['csv'], accept_multiple_files=True)
 
 if st.button("🚀 Proses & Gabungkan"):
     if template_file and daily_files:
         try:
-            # 1. Baca data dari CSV (diurutkan berdasarkan nama file)
+            # 1. Gabungkan semua CSV
             sorted_files = sorted(daily_files, key=lambda x: x.name)
+            # engine='python' + sep=None supaya otomatis deteksi koma/titik-koma
+            list_df = [pd.read_csv(f, sep=None, engine='python') for f in sorted_files]
+            new_data_df = pd.concat(list_df, ignore_index=True)
             
-            # Gabungkan semua CSV menggunakan list comprehension
-            list_df = [pd.read_csv(f) for f in sorted_files]
-            combined_csv_data = pd.concat(list_df, ignore_index=True)
+            # 2. Baca Template
+            template_bytes = template_file.read()
             
-            # 2. Baca Template Excel
-            # Kita baca sheet Januari (jika sudah ada isinya, kita timpa atau append)
+            # Ambil data lama dari sheet Januari (jika ada)
             try:
-                template_df = pd.read_excel(template_file, sheet_name='Januari')
-                # Gabungkan data lama di template dengan data baru dari CSV
-                final_df = pd.concat([template_df, combined_csv_data], ignore_index=True)
+                old_data_df = pd.read_excel(BytesIO(template_bytes), sheet_name='Januari')
+                final_df = pd.concat([old_data_df, new_data_df], ignore_index=True)
             except:
-                # Jika sheet 'Januari' belum ada atau kosong
-                final_df = combined_csv_data
+                final_df = new_data_df
 
-            # 3. Simpan ke Memory
+            # 3. Masukkan ke Template TANPA menghapus sheet
+            book = load_workbook(BytesIO(template_bytes))
+            
+            # Gunakan pd.ExcelWriter dengan mode 'a' (append) dan overlay
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                final_df.to_excel(writer, sheet_name='Januari', index=False)
+                writer.book = book
+                
+                # Cek jika sheet Januari ada, arahkan writer ke sana
+                if 'Januari' in book.sheetnames:
+                    # Kita timpa isinya mulai dari baris pertama (index 0)
+                    # Ini mencegah error "At least one sheet must be visible"
+                    final_df.to_excel(writer, sheet_name='Januari', index=False)
+                else:
+                    final_df.to_excel(writer, sheet_name='Januari', index=False)
             
-            st.success(f"Berhasil memproses {len(daily_files)} file CSV!")
+            st.success(f"Berhasil! Data digabung ke sheet 'Januari'.")
 
-            # 4. Tombol Download
             st.download_button(
-                label="📥 Download Hasil (.xlsx)",
+                label="📥 Download Hasil",
                 data=output.getvalue(),
                 file_name="Updated_2026_Q1_Margin_Trades.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Waduh, ada error: {e}")
     else:
-        st.warning("Pastikan kedua jenis file sudah di-upload.")
+        st.warning("Upload dulu template dan file CSV-nya ya.")

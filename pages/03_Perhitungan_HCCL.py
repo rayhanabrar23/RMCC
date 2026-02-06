@@ -8,7 +8,7 @@ from datetime import datetime
 # ===============================================================
 # 1. PROTEKSI LOGIN & KONFIGURASI HALAMAN
 # ===============================================================
-st.set_page_config(page_title="HCCL Integrator Pro", layout="wide")
+st.set_page_config(page_title="Laman Perhitungan Haircut dan Concentration Limit", layout="wide")
 
 if "login_status" not in st.session_state or not st.session_state["login_status"]:
     st.error("🚨 Akses Ditolak! Silakan login di halaman utama terlebih dahulu.")
@@ -223,3 +223,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

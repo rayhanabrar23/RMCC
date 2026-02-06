@@ -3,57 +3,65 @@ import pandas as pd
 from io import BytesIO
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="Margin Merger - High Volume", layout="centered")
+st.set_page_config(page_title="Margin Merger - Ultra Low RAM", layout="centered")
 
-st.title("📊 Margin Trades Merger (Big Data Mode)")
+st.title("📊 Margin Trades Merger (Low Memory Mode)")
+st.info("Mode ini mencicil data satu per satu agar tidak crash.")
 
 template_file = st.file_uploader("1. Upload Template (.xlsx)", type=['xlsx'])
-daily_files = st.file_uploader("2. Upload CSV Harian (Banyak)", type=['csv'], accept_multiple_files=True)
+daily_files = st.file_uploader("2. Upload CSV Harian", type=['csv'], accept_multiple_files=True)
 
-if st.button("🚀 Proses & Gabungkan"):
+if st.button("🚀 Proses Secara Bertahap"):
     if template_file and daily_files:
         try:
-            with st.spinner('Sedang mencicil penggabungan data...'):
+            with st.spinner('Sedang menulis data ke Excel (ini mungkin butuh waktu)...'):
                 # 1. Load Template ke Memory
                 template_bytes = template_file.read()
                 book = load_workbook(BytesIO(template_bytes))
                 
-                # Kita siapkan writer yang menempel ke template
-                output = BytesIO()
+                # Pastikan sheet Januari ada, atau buat jika tidak ada
+                if 'Januari' not in book.sheetnames:
+                    book.create_sheet('Januari')
                 
-                # Pisahkan proses: Ambil header dulu dari file pertama
-                # agar kita bisa membuat dataframe yang konsisten
+                sheet = book['Januari']
+                
+                # Cek jika sheet kosong, kita akan tulis header nanti
+                # Jika sudah ada isinya, kita cari baris terakhir
+                start_row = sheet.max_row
+                
                 sorted_files = sorted(daily_files, key=lambda x: x.name)
-                
-                # Loop dan gabungkan secara bertahap (batching)
-                # Kita baca template data lama dulu jika ada
-                try:
-                    final_df = pd.read_excel(BytesIO(template_bytes), sheet_name='Januari')
-                except:
-                    final_df = pd.DataFrame()
-
-                # Tambahkan progres bar biar user gak bingung
                 progress_bar = st.progress(0)
-                
-                for i, f in enumerate(sorted_files):
-                    # Baca CSV satu per satu dengan tipe data yang dioptimalkan
-                    temp_df = pd.read_csv(f, sep=None, engine='python', low_memory=True)
-                    final_df = pd.concat([final_df, temp_df], ignore_index=True)
-                    
-                    # Update Progress
-                    progress_bar.progress((i + 1) / len(sorted_files))
-                    
-                    # Opsional: Bersihkan variabel sementara untuk hemat RAM
-                    del temp_df
 
-                # 2. Tulis hasil akhir ke Sheet Januari
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    writer.book = book
-                    final_df.to_excel(writer, sheet_name='Januari', index=False)
-                
+                for i, f in enumerate(sorted_files):
+                    # Baca satu CSV saja
+                    df = pd.read_csv(f, sep=None, engine='python')
+                    
+                    # Jika ini file pertama dan sheet Januari masih kosong, tulis header
+                    if i == 0 and start_row <= 1:
+                        columns = df.columns.tolist()
+                        for col_num, column_title in enumerate(columns, 1):
+                            sheet.cell(row=1, column=col_num).value = column_title
+                        start_row = 1
+
+                    # Tulis data CSV ke baris berikutnya di Excel
+                    # Kita konversi dataframe ke list of lists agar cepat
+                    for r_idx, row in enumerate(df.values.tolist(), start_row + 1):
+                        for c_idx, value in enumerate(row, 1):
+                            sheet.cell(row=r_idx, column=c_idx).value = value
+                    
+                    # Update baris awal untuk file berikutnya
+                    start_row += len(df)
+                    
+                    # Update Progress & Hapus df dari RAM
+                    progress_bar.progress((i + 1) / len(sorted_files))
+                    del df 
+
+                # 2. Simpan hasil akhir
+                output = BytesIO()
+                book.save(output)
                 processed_data = output.getvalue()
 
-            st.success(f"Selesai! Berhasil menggabungkan total {len(final_df)} baris data.")
+            st.success(f"Selesai! Berhasil menggabungkan {len(daily_files)} file.")
             
             st.download_button(
                 label="📥 Download Hasil",
@@ -63,6 +71,6 @@ if st.button("🚀 Proses & Gabungkan"):
             )
 
         except Exception as e:
-            st.error(f"Error: {e}. Coba kurangi jumlah file yang diupload sekaligus.")
+            st.error(f"Error: {e}")
     else:
         st.warning("Upload template dan CSV dulu.")

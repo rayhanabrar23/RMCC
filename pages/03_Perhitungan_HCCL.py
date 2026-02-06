@@ -182,7 +182,7 @@ def update_excel_template(file_template, df_hasil):
 # ===============================================================
 
 def main():
-    st.title("🛡️ HCCL Professional Data Integrator")
+    st.title("🛡️ Laman Perhitungan Haircut dan Concentration Limit")
     st.markdown("---")
     
     col1, col2 = st.columns(2)
@@ -223,4 +223,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 

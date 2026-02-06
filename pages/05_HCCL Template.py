@@ -3,61 +3,53 @@ import pandas as pd
 from io import BytesIO
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="CSV to Excel Merger", layout="wide")
+st.set_page_config(page_title="Margin Merger Pro", layout="centered")
 
-st.title("📊 Margin Trades Merger (Template Safe)")
+st.title("📊 Margin Trades Merger")
+st.write("Gabungkan banyak CSV ke Sheet 'Januari' di Template Excel.")
 
-col1, col2 = st.columns(2)
-with col1:
-    template_file = st.file_uploader("1. Upload Template (Excel)", type=['xlsx'])
-with col2:
-    daily_files = st.file_uploader("2. Upload File CSV Harian", type=['csv'], accept_multiple_files=True)
+# Upload file
+template_file = st.file_uploader("1. Upload File Template (.xlsx)", type=['xlsx'])
+daily_files = st.file_uploader("2. Upload File CSV Harian", type=['csv'], accept_multiple_files=True)
 
 if st.button("🚀 Proses & Gabungkan"):
     if template_file and daily_files:
         try:
-            # 1. Gabungkan semua CSV
-            sorted_files = sorted(daily_files, key=lambda x: x.name)
-            # engine='python' + sep=None supaya otomatis deteksi koma/titik-koma
-            list_df = [pd.read_csv(f, sep=None, engine='python') for f in sorted_files]
-            new_data_df = pd.concat(list_df, ignore_index=True)
-            
-            # 2. Baca Template
-            template_bytes = template_file.read()
-            
-            # Ambil data lama dari sheet Januari (jika ada)
-            try:
-                old_data_df = pd.read_excel(BytesIO(template_bytes), sheet_name='Januari')
-                final_df = pd.concat([old_data_df, new_data_df], ignore_index=True)
-            except:
-                final_df = new_data_df
+            with st.spinner('Sedang memproses data...'):
+                # 1. Baca dan gabung semua CSV
+                sorted_files = sorted(daily_files, key=lambda x: x.name)
+                # sep=None otomatis mendeteksi pemisah CSV (koma/titik koma)
+                list_df = [pd.read_csv(f, sep=None, engine='python') for f in sorted_files]
+                combined_csv_df = pd.concat(list_df, ignore_index=True)
 
-            # 3. Masukkan ke Template TANPA menghapus sheet
-            book = load_workbook(BytesIO(template_bytes))
-            
-            # Gunakan pd.ExcelWriter dengan mode 'a' (append) dan overlay
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                writer.book = book
+                # 2. Load template asli ke memory agar sheet lain tidak hilang
+                template_bytes = template_file.read()
+                book = load_workbook(BytesIO(template_bytes))
                 
-                # Cek jika sheet Januari ada, arahkan writer ke sana
-                if 'Januari' in book.sheetnames:
-                    # Kita timpa isinya mulai dari baris pertama (index 0)
-                    # Ini mencegah error "At least one sheet must be visible"
-                    final_df.to_excel(writer, sheet_name='Januari', index=False)
-                else:
-                    final_df.to_excel(writer, sheet_name='Januari', index=False)
-            
-            st.success(f"Berhasil! Data digabung ke sheet 'Januari'.")
+                # Simpan ke buffer memory
+                output = BytesIO()
+                
+                # Gunakan ExcelWriter dengan engine openpyxl
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    writer.book = book
+                    
+                    # Cek jika sheet Januari ada, kita timpa. Jika tidak, buat baru.
+                    # Kita tidak menghapus sheet (remove), tapi langsung overwrite datanya.
+                    combined_csv_df.to_excel(writer, sheet_name='Januari', index=False)
+                
+                data_ready = output.getvalue()
 
+            st.success(f"Berhasil menggabungkan {len(daily_files)} file ke sheet Januari!")
+            
+            # Tombol Download
             st.download_button(
-                label="📥 Download Hasil",
-                data=output.getvalue(),
+                label="📥 Download Hasil Gabungan",
+                data=data_ready,
                 file_name="Updated_2026_Q1_Margin_Trades.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
         except Exception as e:
-            st.error(f"Waduh, ada error: {e}")
+            st.error(f"Terjadi kesalahan teknis: {e}")
     else:
-        st.warning("Upload dulu template dan file CSV-nya ya.")
+        st.warning("Mohon upload file template dan CSV-nya dulu ya.")

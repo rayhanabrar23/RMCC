@@ -5,37 +5,46 @@ from openpyxl import load_workbook
 from io import BytesIO
 from datetime import datetime
 
+# Cek login (Opsional, sesuaikan dengan file utama Anda)
+if "login_status" not in st.session_state or not st.session_state["login_status"]:
+    st.error("🚨 Akses Ditolak! Silakan login di halaman utama terlebih dahulu.")
+    st.stop()
+
 # ============================
-# KONSTANTA (SESUAI GAMBAR)
+# KONSTANTA & KONFIGURASI
 # ============================
-# Pastikan nama kolom di bawah ini PERSIS sama dengan yang ada di Excel
+# Nama kolom harus sesuai dengan yang ada di file Excel/CSV
 REPO_KEY_COL = 'Instrument Code' 
 PHEI_KEY_COL = 'SERIES' 
 PHEI_VALUE_COL = 'TODAY FAIR PRICE' 
 
-# Berdasarkan gambar: Header (No, KPEI Contract, dll) ada di baris 10
-# Dalam pandas (0-indexed), baris 10 Excel = index 9
+# Berdasarkan gambar user:
+# Header utama (No, Agent Name, dll) ada di baris 10 Excel -> Index 9
 HEADER_ROW_INDEX = 9 
-START_ROW_EXCEL = 11 # Data pertama (No. 1) mulai di baris 11 Excel
+# Data pertama (No. 1) mulai di baris 11 Excel
+START_ROW_EXCEL = 11 
 
 # ============================
-# FUNGSI PEMBERSIH
+# FUNGSI PEMBERSIH KUNCI
 # ============================
 def clean_key_extreme(series):
+    """Membersihkan spasi dan karakter aneh pada kode instrumen."""
     return series.astype(str).str.strip().str.upper().replace(r'[^A-Z0-9]', '', regex=True)
 
 # ============================
-# PROSES DATA
+# FUNGSI PENGOLAHAN DATA UTAMA
 # ============================
 def process_repo_data(df_repo_main, df_phei_lookup):
-    # 1. Bersihkan kunci tanpa menghapus baris agar data tidak hilang
+    st.info("Sedang mencocokkan data Instrument Code dengan Series PHEI...")
+    
+    # 1. Standarisasi Kolom Kunci
     df_repo_main[REPO_KEY_COL] = clean_key_extreme(df_repo_main[REPO_KEY_COL].fillna(''))
     df_phei_lookup[PHEI_KEY_COL] = clean_key_extreme(df_phei_lookup[PHEI_KEY_COL].fillna(''))
     
-    # 2. Hapus duplikat di file PHEI agar tidak menyebabkan baris Repo bertambah (double)
+    # 2. Hapus duplikat di PHEI agar hasil merge tidak melipatgandakan baris repo
     df_phei_lookup = df_phei_lookup.drop_duplicates(subset=[PHEI_KEY_COL])
     
-    # 3. Merge / VLOOKUP
+    # 3. Lakukan Merge (VLOOKUP)
     df_merged = pd.merge(
         df_repo_main,
         df_phei_lookup[[PHEI_KEY_COL, PHEI_VALUE_COL]],
@@ -44,75 +53,97 @@ def process_repo_data(df_repo_main, df_phei_lookup):
         how='left'
     )
     
-    # 4. Cleaning Nilai Fair Price (Contoh: 101,3681)
+    # 4. PERBAIKAN LOGIKA HARGA (Agar koma setelah 3 angka: 101.xxxxx)
     if PHEI_VALUE_COL in df_merged.columns:
-        # Menangani format Indonesia (titik ribuan, koma desimal)
-        val_clean = df_merged[PHEI_VALUE_COL].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
-        df_merged['CLEAN_PRICE'] = pd.to_numeric(val_clean, errors='coerce')
+        # Hapus semua pemisah (titik/koma) agar jadi string angka bersih
+        # Misal: "101.330,97" -> "10133097"
+        val_clean = df_merged[PHEI_VALUE_COL].astype(str).str.replace(r'[^0-9]', '', regex=True)
+        numeric_val = pd.to_numeric(val_clean, errors='coerce')
         
-        # Update kolom Fair Price PHEI (Kolom J)
-        # Jika nilai di PHEI adalah 101.36, kita langsung pakai. 
-        # (Hilangkan pembagi triliun kecuali data mentahnya memang angka bulat panjang)
-        df_merged['Fair Price PHEI'] = df_merged['CLEAN_PRICE']
-        
+        # Bagi 100.000 agar angka 10133097 menjadi 101.33097
+        df_merged['Fair Price PHEI'] = numeric_val / 100000
+    
     return df_merged
 
+# ============================
+# ANTARMUKA UTAMA (STREAMLIT)
+# ============================
 def main():
-    st.title("🔄 Repo Daily Automation (Updated)")
-    
-    file_repo = st.file_uploader("1. Unggah Template Repo", type=['xlsx'])
-    file_phei = st.file_uploader("2. Unggah Data PHEI", type=['xlsx', 'csv'])
+    st.title("🔄 Otomatisasi Repo Daily Position")
+    st.markdown("Fokus: **Mengisi Kolom Fair Price PHEI (J) & Update Tanggal (A2).**")
 
-    if file_repo and file_phei:
+    col1, col2 = st.columns(2)
+    with col1:
+        repo_file_upload = st.file_uploader('1. 📂 Unggah Template Repo', type=['xlsx'])
+    with col2:
+        phei_lookup_file = st.file_uploader('2. 📈 Unggah File PHEI Hari Ini', type=['xlsx', 'csv'])
+
+    st.markdown("---")
+
+    if repo_file_upload and phei_lookup_file:
         try:
-            # BACA REPO: Gunakan header yang benar agar baris tidak hilang
-            df_repo = pd.read_excel(file_repo, header=HEADER_ROW_INDEX)
-            df_repo.columns = df_repo.columns.str.replace('\n', ' ').str.strip()
+            # --- PEMBACAAN FILE REPO ---
+            # Menggunakan header=9 agar baris 10 menjadi nama kolom
+            repo_bytes = repo_file_upload.getvalue()
+            df_repo_raw = pd.read_excel(BytesIO(repo_bytes), header=HEADER_ROW_INDEX)
+            df_repo_raw.columns = df_repo_raw.columns.str.replace('\n', ' ').str.strip()
             
-            # FILTER: Hanya ambil baris yang ada nomor urutnya (menghindari baris kosong/total)
-            # Ini penting agar baris 'Total' tidak ikut diproses sebagai data
-            df_data = df_repo[df_repo['No'].notna()].copy()
+            # Ambil hanya baris yang memiliki nomor urut (No) agar baris 'Total' tidak ikut masuk
+            df_data_only = df_repo_raw[df_repo_raw['No'].notna()].copy()
             
-            # BACA PHEI
-            if file_phei.name.endswith('.csv'):
-                df_phei = pd.read_csv(file_phei, encoding='latin1')
+            # --- PEMBACAAN FILE PHEI ---
+            if phei_lookup_file.name.endswith('.csv'):
+                df_phei = pd.read_csv(phei_lookup_file, encoding='latin1')
             else:
-                df_phei = pd.read_excel(file_phei)
+                df_phei = pd.read_excel(phei_lookup_file)
             df_phei.columns = df_phei.columns.str.strip()
 
-            if st.button("Proses & Perbarui Kolom J"):
-                # Jalankan penggabungan data
-                df_result = process_repo_data(df_data, df_phei)
+            if st.button("Jalankan Proses Update", type="primary"):
+                # 1. Proses Data
+                df_result = process_repo_data(df_data_only, df_phei)
                 
-                # Load workbook untuk menulis tanpa merusak format
-                file_repo.seek(0)
-                wb = load_workbook(file_repo)
-                ws = wb.active
+                # 2. Tulis ke Excel menggunakan Openpyxl
+                wb = load_workbook(BytesIO(repo_bytes))
+                sheet = wb.active
                 
-                # Cari posisi kolom 'Fair Price PHEI' secara dinamis
+                # Cari posisi kolom 'Fair Price PHEI' secara dinamis (Biasanya Kolom J)
                 try:
-                    target_col_idx = df_repo.columns.get_loc('Fair Price PHEI') + 1
-                except:
-                    st.error("Kolom 'Fair Price PHEI' tidak ditemukan!")
+                    fair_price_col_idx = df_repo_raw.columns.get_loc('Fair Price PHEI') + 1
+                except KeyError:
+                    st.error("Kolom 'Fair Price PHEI' tidak ditemukan di template!")
                     return
 
-                # Tulis hasil ke Excel mulai dari START_ROW_EXCEL
-                for i, val in enumerate(df_result['Fair Price PHEI']):
-                    ws.cell(row=START_ROW_EXCEL + i, column=target_col_idx, value=val)
-                
-                # Update Tanggal di A2 (Opsional)
-                today_str = datetime.now().strftime('%d %b %Y')
-                ws['A2'] = f"Daily As of Date : {today_str} - {today_str}"
+                # 3. Update Baris Tanggal (A2)
+                today_date = datetime.now().strftime('%d %b %Y')
+                date_text = f"Daily As of Date : {today_date} - {today_date}"
+                sheet.cell(row=2, column=1, value=date_text) # Kolom 1 adalah A
 
-                # Download
-                out = BytesIO()
-                wb.save(out)
-                st.download_button("⬇️ Download Hasil", out.getvalue(), "Repo_Updated.xlsx")
-                st.success(f"Berhasil memproses {len(df_result)} baris data.")
+                # 4. Update Kolom Fair Price (J) per baris
+                for i, val in enumerate(df_result['Fair Price PHEI']):
+                    current_row = START_ROW_EXCEL + i
+                    # Tulis nilai hanya jika tidak NaN
+                    final_val = val if pd.notna(val) else None
+                    sheet.cell(row=current_row, column=fair_price_col_idx, value=final_val)
+
+                # 5. Output Download
+                output_buffer = BytesIO()
+                wb.save(output_buffer)
+                
+                st.success(f"✅ Berhasil memproses {len(df_result)} baris data.")
+                
+                st.download_button(
+                    label="⬇️ Unduh File Update",
+                    data=output_buffer.getvalue(),
+                    file_name=f"Repo_Updated_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+                
+                # Preview untuk verifikasi
+                st.subheader("Preview Hasil (Kolom J)")
                 st.dataframe(df_result[['No', REPO_KEY_COL, 'Fair Price PHEI']])
 
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Terjadi kesalahan: {e}")
 
 if __name__ == '__main__':
     main()

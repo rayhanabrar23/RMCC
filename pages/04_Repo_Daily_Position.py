@@ -61,7 +61,7 @@ def process_repo_data(df_repo_main, df_phei_lookup):
         numeric_val = pd.to_numeric(val_clean, errors='coerce')
         
         # Bagi 100.000 agar angka 10133097 menjadi 101.33097
-        df_merged['Fair Price PHEI'] = numeric_val / 100000
+        df_merged['Fair Price PHEI'] = numeric_val / 1000000
     
     return df_merged
 
@@ -147,3 +147,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

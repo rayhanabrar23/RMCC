@@ -2,13 +2,14 @@ import streamlit as st
 import pandas as pd
 import openpyxl
 from io import BytesIO
+import io
 
 st.set_page_config(page_title="Finance Report Linkage", layout="wide")
 
 st.title("📊 Disburse & Repayment Automator")
-st.markdown("Unggah file master dan file broker, lalu sistem akan memproses otomatis ke kolom yang sesuai.")
+st.markdown("Unggah file master dan file broker (XLS/XML), lalu sistem akan memproses otomatis.")
 
-# --- SIDEBAR KONFIGURASI ---
+# --- KONFIGURASI DINAMIS ---
 with st.sidebar:
     st.header("Konfigurasi")
     bulan_dipilih = st.selectbox("Pilih Bulan Proses", 
@@ -24,14 +25,28 @@ def get_column_letter(month_name):
     }
     return mapping.get(month_name.upper(), 'F')
 
+def smart_read_excel(uploaded_file):
+    """Fungsi untuk membaca file Excel standar atau XML Spreadsheet 2003"""
+    content = uploaded_file.read()
+    try:
+        # Coba baca sebagai Excel standar (xlsx/xls)
+        return pd.read_excel(BytesIO(content), header=None)
+    except Exception:
+        try:
+            # Jika gagal, coba baca sebagai XML (sering terjadi pada file .xls hasil export sistem)
+            return pd.read_html(BytesIO(content))[0]
+        except Exception as e:
+            st.error(f"Gagal membaca file {uploaded_file.name}: Format tidak didukung.")
+            return None
+
 # --- UPLOAD FILE ---
 col1, col2 = st.columns(2)
 
 with col1:
-    master_file = st.file_uploader("1. Unggah File Master (Template)", type=['xlsx'])
+    master_file = st.file_uploader("1. Unggah File Master (Template .xlsx)", type=['xlsx'])
 
 with col2:
-    broker_files = st.file_uploader("2. Unggah Semua File Broker (Disburse & Repay)", type=['xls'], accept_multiple_files=True)
+    broker_files = st.file_uploader("2. Unggah Semua File Broker (.xls / .xlsx)", type=['xls', 'xlsx'], accept_multiple_files=True)
 
 if master_file and broker_files:
     if st.button("🚀 Proses & Generate Laporan"):
@@ -44,7 +59,6 @@ if master_file and broker_files:
             row_map_disburse = {'EP': 5, 'HD': 6, 'HP': 7, 'XC': 8}
             row_map_repayment = {'EP': 16, 'HD': 17, 'HP': 18, 'XC': 19}
             
-            # List untuk log di Streamlit
             process_log = []
 
             for f in broker_files:
@@ -61,11 +75,15 @@ if master_file and broker_files:
                     process_log.append({"File": f.name, "Status": "⚠️ Skip", "Keterangan": "Broker tidak terdeteksi"})
                     continue
 
-                # Read Data
-                df_raw = pd.read_excel(f, header=None)
-                val = 0
+                # Gunakan fungsi smart_read
+                df_raw = smart_read_excel(f)
+                
+                if df_raw is None:
+                    continue
 
+                val = 0
                 if "DISBURSE" in fname:
+                    # Cari 'Grand Total' di seluruh dataframe
                     mask_total = df_raw.astype(str).apply(lambda x: x.str.contains('Grand Total', case=False)).any(axis=1)
                     df_total_row = df_raw[mask_total]
                     if not df_total_row.empty:
@@ -76,14 +94,16 @@ if master_file and broker_files:
                     process_log.append({"File": f.name, "Status": "✅ Berhasil", "Keterangan": f"Disburse {code}: {val:,.0f}"})
 
                 elif "REPAYMENT" in fname:
-                    col_i_numeric = pd.to_numeric(df_raw[8], errors='coerce').dropna()
-                    val = col_i_numeric.iloc[-1] if not col_i_numeric.empty else 0
+                    # Ambil kolom ke-9 (Index 8). Jika XML, mungkin perlu penyesuaian index
+                    try:
+                        col_target = df_raw.iloc[:, 8] # Kolom ke-9
+                        col_numeric = pd.to_numeric(col_target, errors='coerce').dropna()
+                        val = col_numeric.iloc[-1] if not col_numeric.empty else 0
+                    except:
+                        val = 0
                     
                     ws_main[f"{target_col}{row_map_repayment[code]}"] = val
                     process_log.append({"File": f.name, "Status": "✅ Berhasil", "Keterangan": f"Repayment {code}: {val:,.0f}"})
-                
-                else:
-                    process_log.append({"File": f.name, "Status": "⚠️ Skip", "Keterangan": "Bukan file Disburse/Repay"})
 
             # Update Summary Tahunan
             s_sum_name = "Summary Tahunan"
@@ -99,27 +119,15 @@ if master_file and broker_files:
             wb.save(output)
             output.seek(0)
 
-            # Tampilkan Hasil
-            st.success(f"Pemrosesan Selesai untuk bulan {bulan_dipilih}!")
+            st.success(f"Pemrosesan Selesai!")
             st.table(pd.DataFrame(process_log))
 
             st.download_button(
                 label="📥 Download File Master Terbaru",
                 data=output,
-                file_name=f"Disburse dan Repayment {tahun_proses} - Update {bulan_dipilih}.xlsx",
+                file_name=f"Update_{bulan_dipilih}_{tahun_proses}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
         except Exception as e:
-            st.error(f"Terjadi kesalahan: {e}")
-
-# --- PETUNJUK ---
-else:
-    st.info("Silakan unggah File Master dan File Broker untuk memulai.")
-    with st.expander("Lihat Petunjuk Penamaan File"):
-        st.write("""
-        Pastikan nama file broker mengandung unsur berikut:
-        1. Kata **'DISBURSE'** atau **'REPAYMENT'**.
-        2. Kode Broker **'EP', 'HD', 'HP', atau 'XC'** (Contoh: 'Disburse EP.xlsx').
-        3. Untuk Repayment, data angka harus berada di kolom ke-9 (Kolom I).
-        """)
+            st.error(f"Terjadi kesalahan teknis: {e}")

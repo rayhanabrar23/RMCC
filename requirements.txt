@@ -6,6 +6,8 @@ openpyxl
 reportlab
 numpy
 lxml
+xlrd
+
 
 
 

@@ -5,6 +5,9 @@ pandas
 openpyxl
 reportlab
 numpy
+lmxl
+xlrd
+
 
 
 

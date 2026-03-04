@@ -31,7 +31,7 @@ with col1:
     master_file = st.file_uploader("1. Unggah File Master (Template)", type=['xlsx'])
 
 with col2:
-    broker_files = st.file_uploader("2. Unggah Semua File Broker (Disburse & Repay)", type=['xlsx'], accept_multiple_files=True)
+    broker_files = st.file_uploader("2. Unggah Semua File Broker (Disburse & Repay)", type=['xls'], accept_multiple_files=True)
 
 if master_file and broker_files:
     if st.button("🚀 Proses & Generate Laporan"):

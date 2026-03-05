@@ -156,7 +156,7 @@ def update_excel_template(file_template, df_hasil):
 # 5. ANTARMUKA STREAMLIT
 # ===============================================================
 def main():
-    st.title("🛡️ Laman Perhitungan Haircut dan Concentration Limit")
+    st.title("Laman Perhitungan Haircut dan Concentration Limit")
     
     # --- BAGIAN INPUT PROFIL EMITEN (DYNAMIC) ---
     st.markdown("### Konfigurasi Profil Emiten")
@@ -208,4 +208,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 

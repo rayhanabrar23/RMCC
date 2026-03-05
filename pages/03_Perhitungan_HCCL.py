@@ -159,7 +159,7 @@ def main():
     st.title("🛡️ Laman Perhitungan Haircut dan Concentration Limit")
     
     # --- BAGIAN INPUT PROFIL EMITEN (DYNAMIC) ---
-    st.markdown("### ⚙️ Konfigurasi Profil Emiten (Override)")
+    st.markdown("### Konfigurasi Profil Emiten")
     st.info("Tambahkan kode saham dan nominal limit (misal: 10M = 10000000000). Gunakan tombol + di bawah tabel untuk menambah.")
     
     edited_profil = st.data_editor(
@@ -208,3 +208,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

@@ -359,8 +359,14 @@ def fill_simple_ll_template(df_result, template_buffer):
         cell_B = ws.cell(row=r_idx, column=2, value=str(row[1]) if pd.notna(row[1]) else "")
         cell_B.style = style_stock_name
 
-        # Kolom C (3): Available Lendable Limit (Harus berupa float/int agar format #,##0 bekerja)
-        value_C = int(row[2]) if pd.notna(row[2]) and row[2] == int(row[2]) else (float(row[2]) if pd.notna(row[2]) else 0)
+        # Kolom C (3): Available Lendable Limit
+        try:
+        # Jika ada isinya dan bisa dihitung, bulatkan ke integer
+        value_C = int(round(row[2], 0)) if pd.notna(row[2]) else 0
+        except (ValueError, TypeError):
+        # Jika datanya aneh/error, kasih 0 supaya Excel tidak corrupt
+        value_C = 0
+
         cell_C = ws.cell(row=r_idx, column=3, value=value_C)
         cell_C.style = style_available_ll
         

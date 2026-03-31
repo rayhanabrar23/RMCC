@@ -362,13 +362,13 @@ def fill_simple_ll_template(df_result, template_buffer):
         # Kolom C (3): Available Lendable Limit
         try:
         # Jika ada isinya dan bisa dihitung, bulatkan ke integer
-        value_C = int(round(row[2], 0)) if pd.notna(row[2]) else 0
+            value_C = int(round(row[2], 0)) if pd.notna(row[2]) else 0
         except (ValueError, TypeError):
         # Jika datanya aneh/error, kasih 0 supaya Excel tidak corrupt
-        value_C = 0
+            value_C = 0
 
-        cell_C = ws.cell(row=r_idx, column=3, value=value_C)
-        cell_C.style = style_available_ll
+            cell_C = ws.cell(row=r_idx, column=3, value=value_C)
+            cell_C.style = style_available_ll
         
     # 5. Simpan ke buffer baru
     output_buffer = BytesIO()

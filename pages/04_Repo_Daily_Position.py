@@ -134,7 +134,7 @@ def main():
                 st.download_button(
                     label="⬇️ Unduh File Update",
                     data=output_buffer.getvalue(),
-                    file_name=f"Repo_Updated_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    file_name=f"Reverse Repo Bonds Daily Position {datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
                 

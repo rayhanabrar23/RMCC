@@ -262,8 +262,8 @@ def main():
                 # Download Buttons
                 d_cols = st.columns(3)
                 d_cols[0].download_button("⬇️ Konsolidasi", xlsx_buf, "Konsolidasi.xlsx")
-                d_cols[1].download_button("⬇️ LL Lengkap", full_buf, "LL_Lengkap.xlsx")
-                d_cols[2].download_button("⬇️ LL Eksternal", simple_buf, "LL_Eksternal.xlsx")
+                d_cols[1].download_button("⬇️ LL Lengkap", full_buf, "Lendable Limit.xlsx")
+                d_cols[2].download_button("⬇️ LL Eksternal", simple_buf, "Lendable Limit_.xlsx")
 
 if __name__ == '__main__':
     main()

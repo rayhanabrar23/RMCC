@@ -145,6 +145,43 @@ def process_lendable_limit(uploaded_files, template_file_data):
             ws = wb_template.active
             ws["B4"] = datetime.now().strftime('%d-%b-%y')
             
+            # Definisikan Style agar sama dengan gambar
+            f_body = Font(name='Roboto Condensed', size=9)
+            align_center = Alignment(horizontal='center', vertical='center')
+            align_left = Alignment(horizontal='left', vertical='center')
+            border_thin = Border(
+                left=Side(style='thin'), 
+                right=Side(style='thin'), 
+                top=Side(style='thin'), 
+                bottom=Side(style='thin')
+            )
+
+            for r_idx, row in enumerate(df_result_static.itertuples(index=False), start=7):
+                for c_idx, value in enumerate(row, start=1):
+                    cell = ws.cell(row=r_idx, column=c_idx, value=value)
+                    
+                    # Terapkan Border dan Font ke semua sel
+                    cell.border = border_thin
+                    cell.font = f_body
+                    
+                    # Atur Alignment & Format Angka berdasarkan Kolom
+                    if c_idx == 1: # Stock Code
+                        cell.alignment = align_center
+                    elif c_idx == 2: # Stock Name
+                        cell.alignment = align_left
+                    else: # Kolom Angka (C sampai L)
+                        cell.alignment = align_center
+                        # Gunakan format #.##0 jika ingin bulat dengan titik ribuan
+                        # Jika ingin ada desimal seperti di gambar (misal 59.970), gunakan '#,##0' 
+                        # Note: Excel Indonesia/US sering tertukar antara titik dan koma, 
+                        # '#,##0' adalah format standar ribuan di openpyxl.
+                        cell.number_format = '#,##0'
+
+            # ... (lanjutkan ke simpan file) ...
+            wb_template = load_workbook(template_file_data)
+            ws = wb_template.active
+            ws["B4"] = datetime.now().strftime('%d-%b-%y')
+            
             # (Style definition omitted for brevity, assuming standard in your setup)
             
             for r_idx, row in enumerate(df_result_static.itertuples(index=False), start=7):

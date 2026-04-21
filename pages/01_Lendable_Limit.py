@@ -130,7 +130,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             output_xlsx_buffer.seek(0)
 
             # ========================================================
-            # BAGIAN PENGISIAN TEMPLATE FULL (DENGAN STYLE & FORMAT)
+            # BAGIAN PENGISIAN TEMPLATE FULL (REVISI BULAT TOTAL)
             # ========================================================
             wb_template = load_workbook(template_file_data)
             ws = wb_template.active
@@ -148,10 +148,10 @@ def process_lendable_limit(uploaded_files, template_file_data):
                 for c_idx, value in enumerate(row, start=1):
                     cell = ws.cell(row=r_idx, column=c_idx)
                     
-                    # Isi Nilai: Pastikan angka dikonversi agar format ribuan jalan
+                    # Isi Nilai & Paksa Bulat Total (menghilangkan desimal di formula bar)
                     if c_idx >= 3:
                         try:
-                            cell.value = float(value)
+                            cell.value = int(round(float(value), 0))
                         except:
                             cell.value = value
                     else:
@@ -167,7 +167,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
                         cell.alignment = align_left
                     else:
                         cell.alignment = align_center
-                        cell.number_format = '#,##0' # Format Titik Ribuan
+                        cell.number_format = '#,##0'
 
             output_template_full = BytesIO()
             wb_template.save(output_template_full)
@@ -180,7 +180,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             return None, None, None
 
 # ============================================================
-# FUNGSI TEMPLATE EKSTERNAL (SEDERHANA)
+# FUNGSI TEMPLATE EKSTERNAL (REVISI BULAT TOTAL)
 # ============================================================
 def fill_simple_ll_template(df_result, template_buffer):
     wb = load_workbook(template_buffer)
@@ -188,7 +188,6 @@ def fill_simple_ll_template(df_result, template_buffer):
     ws["B4"] = datetime.now().strftime('%d-%b-%y')
 
     start_row = 7 
-    # Hapus data lama jika ada
     if ws.max_row >= start_row:
         ws.delete_rows(start_row, ws.max_row - start_row + 1)
 
@@ -198,16 +197,18 @@ def fill_simple_ll_template(df_result, template_buffer):
     border_thin = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
     for r_idx, row in enumerate(df_result.itertuples(index=False), start=start_row):
-        # Kolom A
+        # Kolom A & B
         c1 = ws.cell(row=r_idx, column=1, value=str(row[0]))
         c1.font, c1.border, c1.alignment = f_body, border_thin, align_center
-        # Kolom B
         c2 = ws.cell(row=r_idx, column=2, value=str(row[1]))
         c2.font, c2.border, c2.alignment = f_body, border_thin, align_left
-        # Kolom C (Angka)
+        
+        # Kolom C (Paksa Bulat Total)
         val_c = 0
-        try: val_c = float(row[2])
-        except: pass
+        try: 
+            val_c = int(round(float(row[2]), 0))
+        except: 
+            pass
         c3 = ws.cell(row=r_idx, column=3, value=val_c)
         c3.font, c3.border, c3.alignment = f_body, border_thin, align_center
         c3.number_format = '#,##0'
@@ -247,7 +248,7 @@ def main():
                 d_cols = st.columns(3)
                 d_cols[0].download_button("⬇️ Konsolidasi", xlsx_buf, "Konsolidasi.xlsx")
                 d_cols[1].download_button("⬇️ LL Lengkap", full_buf, f"Lendable Limit {datetime.now().strftime('%Y%m%d')}.xlsx")
-                d_cols[2].download_button("⬇️ LL Eksternal", simple_buf, f"Lendable Limit_{datetime.now().strftime('%Y%m%d')}.xlsx")
+                d_cols[2].download_button("⬇️ LL Eksternal", simple_buf, f"Lendable Limit_Eksternal_{datetime.now().strftime('%Y%m%d')}.xlsx")
 
 if __name__ == '__main__':
     main()

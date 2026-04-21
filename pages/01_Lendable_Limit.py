@@ -1,5 +1,3 @@
-# pages/01_Lendable_Limit.py
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,7 +5,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font, Alignment, Border, Side, NamedStyle
 from io import BytesIO
 from datetime import datetime
-import os 
+import os
 import sys
 
 # Import library untuk PDF
@@ -46,13 +44,6 @@ FINAL_COLUMNS_LL = [
     'Lendable Limit', 'Borrow Position', 'Available Lendable Limit'
 ]
 
-PDF_HEADERS = [
-    'Kode', 'Nama Saham', 'QOH', 
-    '1st Lgst', '2nd Lgst', 'Total Lgst', 
-    'Qty Avail', '30% QOH', 'REPO', 
-    'LL Limit', 'Borrow Pos', 'Avail LL'
-]
-
 # ============================
 # FUNGSI STYLING KONDISIONAL
 # ============================
@@ -81,7 +72,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
     
     with st.spinner('Memproses data...'):
         try:
-            # 1. Stock Position
+            # 1. Stock Position Cleaning
             df_sp.columns = df_sp.columns.str.strip()
             stock_col = df_sp.columns[1]
             qty_col = df_sp.columns[10]
@@ -104,8 +95,6 @@ def process_lendable_limit(uploaded_files, template_file_data):
             df_instr[col_repo] = pd.to_numeric(df_instr[col_repo], errors='coerce').fillna(0)
 
             df_pivot_full = df_instr.groupby(col_row)[[col_loan, col_repo]].sum().reset_index()
-            df_pivot_full = df_pivot_full[df_pivot_full[col_row].notna()]
-            df_pivot_full = df_pivot_full[~((df_pivot_full[col_loan] == 0) & (df_pivot_full[col_repo] == 0))]
 
             # 3. Final Calculations
             df_result = df_pivot_full[['Local Code']].rename(columns={'Local Code': 'Stock Code'}).drop_duplicates()
@@ -134,22 +123,51 @@ def process_lendable_limit(uploaded_files, template_file_data):
             df_result_filtered = df_result[~df_result['Stock Code'].isin(STOCK_CODE_BLACKLIST)].copy()
             df_result_static = df_result_filtered[(df_result_filtered['Lendable Limit'] > 0) | (df_result_filtered['Available Lendable Limit'] > 0)].reindex(columns=FINAL_COLUMNS_LL)
 
+            # Export Mentah (Konsolidasi)
             with pd.ExcelWriter(output_xlsx_buffer, engine='openpyxl') as writer:
                 df_result_filtered.reindex(columns=FINAL_COLUMNS_LL).to_excel(writer, sheet_name=SHEET_RESULT_NAME_SOURCE, index=False)
                 df_instr_old_raw.to_excel(writer, sheet_name=SHEET_INST_OLD, index=False, header=False)
-            
             output_xlsx_buffer.seek(0)
 
-            # Copy to Template Full
+            # ========================================================
+            # BAGIAN PENGISIAN TEMPLATE FULL (DENGAN STYLE & FORMAT)
+            # ========================================================
             wb_template = load_workbook(template_file_data)
             ws = wb_template.active
             ws["B4"] = datetime.now().strftime('%d-%b-%y')
             
-            # (Style definition omitted for brevity, assuming standard in your setup)
-            
+            f_body = Font(name='Roboto Condensed', size=9)
+            align_center = Alignment(horizontal='center', vertical='center')
+            align_left = Alignment(horizontal='left', vertical='center')
+            border_thin = Border(
+                left=Side(style='thin'), right=Side(style='thin'), 
+                top=Side(style='thin'), bottom=Side(style='thin')
+            )
+
             for r_idx, row in enumerate(df_result_static.itertuples(index=False), start=7):
                 for c_idx, value in enumerate(row, start=1):
-                    ws.cell(row=r_idx, column=c_idx, value=value)
+                    cell = ws.cell(row=r_idx, column=c_idx)
+                    
+                    # Isi Nilai: Pastikan angka dikonversi agar format ribuan jalan
+                    if c_idx >= 3:
+                        try:
+                            cell.value = float(value)
+                        except:
+                            cell.value = value
+                    else:
+                        cell.value = value
+                    
+                    # Terapkan Style
+                    cell.border = border_thin
+                    cell.font = f_body
+                    
+                    if c_idx == 1:
+                        cell.alignment = align_center
+                    elif c_idx == 2:
+                        cell.alignment = align_left
+                    else:
+                        cell.alignment = align_center
+                        cell.number_format = '#,##0' # Format Titik Ribuan
 
             output_template_full = BytesIO()
             wb_template.save(output_template_full)
@@ -162,7 +180,7 @@ def process_lendable_limit(uploaded_files, template_file_data):
             return None, None, None
 
 # ============================================================
-# REVISI UTAMA: FUNGSI TEMPLATE EKSTERNAL (SOLUSI DESIMAL)
+# FUNGSI TEMPLATE EKSTERNAL (SEDERHANA)
 # ============================================================
 def fill_simple_ll_template(df_result, template_buffer):
     wb = load_workbook(template_buffer)
@@ -170,68 +188,34 @@ def fill_simple_ll_template(df_result, template_buffer):
     ws["B4"] = datetime.now().strftime('%d-%b-%y')
 
     start_row = 7 
+    # Hapus data lama jika ada
     if ws.max_row >= start_row:
         ws.delete_rows(start_row, ws.max_row - start_row + 1)
 
-    # Styles
-    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
-    
-    style_code = NamedStyle(name="EXT_CODE")
-    style_code.font = Font(name='Roboto Condensed', size=9)
-    style_code.alignment = Alignment(horizontal='center', vertical='center')
-    style_code.border = thin_border
-    if "EXT_CODE" not in wb.named_styles: wb.add_named_style(style_code)
-
-    style_name = NamedStyle(name="EXT_NAME")
-    style_name.font = Font(name='Roboto Condensed', size=9)
-    style_name.alignment = Alignment(horizontal='left', vertical='center')
-    style_name.border = thin_border
-    if "EXT_NAME" not in wb.named_styles: wb.add_named_style(style_name)
-
-    style_limit = NamedStyle(name="EXT_LIMIT")
-    style_limit.font = Font(name='Roboto Condensed', size=9)
-    style_limit.alignment = Alignment(horizontal='center', vertical='center')
-    style_limit.border = thin_border
-    style_limit.number_format = '#,##0' 
-    if "EXT_LIMIT" not in wb.named_styles: wb.add_named_style(style_limit)
+    f_body = Font(name='Roboto Condensed', size=9)
+    align_center = Alignment(horizontal='center', vertical='center')
+    align_left = Alignment(horizontal='left', vertical='center')
+    border_thin = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
     for r_idx, row in enumerate(df_result.itertuples(index=False), start=start_row):
-        # Kolom A & B
-        cell_a = ws.cell(row=r_idx, column=1, value=str(row[0]) if pd.notna(row[0]) else "")
-        cell_a.style = style_code
-        cell_b = ws.cell(row=r_idx, column=2, value=str(row[1]) if pd.notna(row[1]) else "")
-        cell_b.style = style_name
-
-        # Kolom C: Penanganan Desimal dengan Indentasi Benar
-        try:
-            # Ambil nilai dari kolom ke-3 (index 2)
-            raw_val = row[2]
-            if pd.notna(raw_val):
-                value_c = int(round(raw_val, 0))
-            else:
-                value_c = 0
-        except (ValueError, TypeError):
-            value_c = 0
-            
-        cell_c = ws.cell(row=r_idx, column=3, value=value_c)
-        cell_c.style = style_limit
+        # Kolom A
+        c1 = ws.cell(row=r_idx, column=1, value=str(row[0]))
+        c1.font, c1.border, c1.alignment = f_body, border_thin, align_center
+        # Kolom B
+        c2 = ws.cell(row=r_idx, column=2, value=str(row[1]))
+        c2.font, c2.border, c2.alignment = f_body, border_thin, align_left
+        # Kolom C (Angka)
+        val_c = 0
+        try: val_c = float(row[2])
+        except: pass
+        c3 = ws.cell(row=r_idx, column=3, value=val_c)
+        c3.font, c3.border, c3.alignment = f_body, border_thin, align_center
+        c3.number_format = '#,##0'
         
     out = BytesIO()
     wb.save(out)
     out.seek(0)
     return out
-
-# ============================
-# PDF CONVERSION & MAIN UI
-# ============================
-def convert_df_full_to_pdf(df):
-    pdf_buffer = BytesIO()
-    doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(letter))
-    elements = [Paragraph("Lendable Limit Report", getSampleStyleSheet()['Title'])]
-    # (Simplified PDF generation)
-    doc.build(elements)
-    pdf_buffer.seek(0)
-    return pdf_buffer
 
 def main():
     st.title("💸 Lendable Limit (LL) Calculation")
@@ -263,7 +247,7 @@ def main():
                 d_cols = st.columns(3)
                 d_cols[0].download_button("⬇️ Konsolidasi", xlsx_buf, "Konsolidasi.xlsx")
                 d_cols[1].download_button("⬇️ LL Lengkap", full_buf, f"Lendable Limit {datetime.now().strftime('%Y%m%d')}.xlsx")
-                d_cols[2].download_button("⬇️ LL Eksternal", simple_buf, f"Lendable Limit_{datetime.now().strftime('%Y%m%d')}.xlsx")
+                d_cols[2].download_button("⬇️ LL Eksternal", simple_buf, f"Lendable Limit_Eksternal_{datetime.now().strftime('%Y%m%d')}.xlsx")
 
 if __name__ == '__main__':
     main()

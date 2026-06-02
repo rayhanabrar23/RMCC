@@ -57,11 +57,7 @@ def process_repo_data(df_repo_main, df_phei_lookup):
     if PHEI_VALUE_COL in df_merged.columns:
         # Hapus semua pemisah (titik/koma) agar jadi string angka bersih
         # Misal: "101.330,97" -> "10133097"
-        val_clean = df_merged[PHEI_VALUE_COL].astype(str).str.replace(r'[^0-9]', '', regex=True)
-        numeric_val = pd.to_numeric(val_clean, errors='coerce')
-        
-        # Bagi 100.000 agar angka 10133097 menjadi 101.33097
-        df_merged['Fair Price PHEI'] = numeric_val / 1000000
+        df_merged['Fair Price PHEI'] = pd.to_numeric(df_merged[PHEI_VALUE_COL], errors='coerce')
     
     return df_merged
 

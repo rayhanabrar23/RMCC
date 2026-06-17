@@ -8,6 +8,74 @@ if "login_status" not in st.session_state or not st.session_state["login_status"
 from style_utils import apply_custom_style
 apply_custom_style()
 
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+
+    .stApp { background-color: #0f1117; color: #e8eaf0; }
+
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1a1d2e 0%, #141624 100%);
+        border-right: 1px solid #2a2d3e;
+    }
+
+    .card {
+        background: #1a1d2e;
+        border: 1px solid #2a2d3e;
+        border-radius: 12px;
+        padding: 20px 24px;
+        margin-bottom: 16px;
+    }
+    .card-title {
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        color: #5c7cfa;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+    }
+
+    .main-header {
+        background: linear-gradient(135deg, #1a1d2e 0%, #1e2340 100%);
+        border: 1px solid #2a2d3e;
+        border-radius: 14px;
+        padding: 24px 28px;
+        margin-bottom: 24px;
+    }
+    .main-header h1 { font-size: 1.6rem; font-weight: 700; color: #e8eaf0; margin: 0; }
+    .main-header p  { color: #6b7080; margin: 6px 0 0 0; font-size: 0.88rem; }
+
+    .stButton > button {
+        background: linear-gradient(135deg, #3b5bdb, #5c7cfa);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        padding: 10px 24px;
+        transition: opacity 0.2s;
+    }
+    .stButton > button:hover { opacity: 0.88; }
+
+    [data-testid="stFileUploader"] {
+        background: #1a1d2e;
+        border: 1px dashed #3b5bdb;
+        border-radius: 10px;
+        padding: 8px;
+    }
+
+    hr { border-color: #2a2d3e; }
+
+    .stTextInput > div > div, .stSelectbox > div > div {
+        background: #1a1d2e !important;
+        border-color: #2a2d3e !important;
+        color: #e8eaf0 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
@@ -289,8 +357,12 @@ def update_excel_template(file_template, df_hasil):
 # ============================
 
 def main():
-    st.title("🛡️ Concentration Limit (CL) & Haircut Calculation")
-
+   st.markdown("""
+<div class="main-header">
+  <h1>🛡️ Concentration Limit & Haircut Calculation</h1>
+  <p>Hitung CL & Haircut dari raw data, lalu inject hasil ke template Excel</p>
+</div>
+""", unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📊 Hitung CL & Haircut", "💉 Inject ke Template"])
 
     # ============================================================

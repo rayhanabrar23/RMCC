@@ -499,6 +499,7 @@ def main():
             if st.button("➕ Tambah", type="primary"):
                 if new_kode and new_kode not in updated_mapping:
                     updated_mapping[new_kode] = new_nominal
+                    st.session_state['override_mapping'] = updated_mapping
                     st.success(f"✅ {new_kode} ditambahkan.")
                 elif new_kode in updated_mapping:
                     st.warning(f"⚠️ {new_kode} sudah ada.")

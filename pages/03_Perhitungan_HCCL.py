@@ -227,28 +227,58 @@ def calculate_concentration_limit(df_cl_source: pd.DataFrame) -> pd.DataFrame:
 def update_excel_template(file_template, df_hasil):
     """
     Menyuntikkan hasil perhitungan ke template Excel.
-    Sheet CONC  : Kolom C (Kode Efek), P (CL Marjin Baru), Q (CL Listed),
-                  R (CL FF), S (CL RMCC), V (Pertimbangan CL)
-    Sheet HC    : Kolom C (Kode Efek), R (Haircut Usulan Divisi)
-    Data mulai baris ke-5.
+    
+    Sheet CONC (data mulai row 5):
+      col 16 (P) = CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU
+      col 17 (Q) = CONCENTRATION LIMIT TERKENA % LISTED SHARES
+      col 18 (R) = CONCENTRATION LIMIT TERKENA % FREE FLOAT
+      col 19 (S) = CONCENTRATION LIMIT USULAN RMCC
+      col 22 (V) = PERTIMBANGAN DIVISI (CONC LIMIT)
+    
+    Sheet HC (data mulai row 5):
+      col 18 (R) = HAIRCUT PEI USULAN DIVISI
+      col 20 (T) = PERTIMBANGAN DIVISI (HAIRCUT)
+    
+    Matching dilakukan berdasarkan KODE EFEK di col 3 (C),
+    bukan urutan baris, agar aman jika urutan berbeda.
     """
     output = BytesIO()
     wb = load_workbook(file_template)
     ws_conc = wb["CONC"]
     ws_hc = wb["HC"]
 
-    for i, row in enumerate(df_hasil.to_dict('records'), start=5):
-        # --- SHEET CONC ---
-        ws_conc.cell(row=i, column=3,  value=row.get('KODE EFEK'))
-        ws_conc.cell(row=i, column=16, value=row.get('CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'))  # Col P
-        ws_conc.cell(row=i, column=17, value=row.get(COL_LISTED))                                      # Col Q
-        ws_conc.cell(row=i, column=18, value=row.get(COL_FF))                                          # Col R
-        ws_conc.cell(row=i, column=19, value=row.get(COL_RMCC))                                        # Col S
-        ws_conc.cell(row=i, column=22, value=row.get('PERTIMBANGAN DIVISI (CONC LIMIT)'))              # Col V
+    # Buat lookup dict dari df_hasil: kode_efek -> row dict
+    hasil_map = {
+        str(row.get('KODE EFEK', '')).strip(): row
+        for row in df_hasil.to_dict('records')
+    }
 
-        # --- SHEET HC ---
-        ws_hc.cell(row=i, column=3,  value=row.get('KODE EFEK'))
-        ws_hc.cell(row=i, column=18, value=row.get('HAIRCUT PEI USULAN DIVISI'))                       # Col R
+    # --- INJECT SHEET CONC ---
+    for excel_row in ws_conc.iter_rows(min_row=5):
+        kode = excel_row[2].value  # col C = index 2
+        if kode is None:
+            break
+        kode = str(kode).strip()
+        if kode not in hasil_map:
+            continue
+        row = hasil_map[kode]
+        ws_conc.cell(row=excel_row[0].row, column=16, value=row.get('CONCENTRATION LIMIT KARENA SAHAM MARJIN BARU'))
+        ws_conc.cell(row=excel_row[0].row, column=17, value=row.get(COL_LISTED))
+        ws_conc.cell(row=excel_row[0].row, column=18, value=row.get(COL_FF))
+        ws_conc.cell(row=excel_row[0].row, column=19, value=row.get(COL_RMCC))
+        ws_conc.cell(row=excel_row[0].row, column=22, value=row.get('PERTIMBANGAN DIVISI (CONC LIMIT)'))
+
+    # --- INJECT SHEET HC ---
+    for excel_row in ws_hc.iter_rows(min_row=5):
+        kode = excel_row[2].value  # col C = index 2
+        if kode is None:
+            break
+        kode = str(kode).strip()
+        if kode not in hasil_map:
+            continue
+        row = hasil_map[kode]
+        ws_hc.cell(row=excel_row[0].row, column=18, value=row.get('HAIRCUT PEI USULAN DIVISI'))
+        ws_hc.cell(row=excel_row[0].row, column=20, value=row.get('PERTIMBANGAN DIVISI (HAIRCUT)'))
 
     wb.save(output)
     output.seek(0)

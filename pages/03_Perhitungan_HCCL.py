@@ -357,16 +357,15 @@ def update_excel_template(file_template, df_hasil):
 # ============================
 
 def main():
-   st.markdown("""
+    st.markdown("""
     <div class="main-header">
       <h1>🛡️ Concentration Limit & Haircut Calculation</h1>
       <p>Hitung CL & Haircut dari raw data, lalu inject hasil ke template Excel</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # ============================================================
-    # TAB 1: HITUNG
-    # ============================================================
+    tab1, tab2 = st.tabs(["📊 Hitung CL & Haircut", "💉 Inject ke Template"])
+
     with tab1:
         st.markdown("Unggah file sumber raw data untuk menjalankan perhitungan CL & Haircut.")
 
@@ -403,6 +402,48 @@ def main():
 
                 except Exception as e:
                     st.error(f"❌ Gagal. Pastikan format file benar. Error: {e}")
+
+    with tab2:
+        st.markdown("Unggah hasil perhitungan dari Tab 1 dan template target untuk inject.")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            uploaded_hasil = st.file_uploader(
+                "📂 Unggah Hasil Perhitungan (dari Tab 1)",
+                type=['xlsx'], key='cl_hasil'
+            )
+        with col2:
+            uploaded_template = st.file_uploader(
+                "📋 Unggah Template Target (XLSX)",
+                type=['xlsx'], key='cl_template'
+            )
+
+        if uploaded_hasil is not None and uploaded_template is not None:
+            if st.button("💉 Inject ke Template", type="primary"):
+                try:
+                    df_hasil = pd.read_excel(uploaded_hasil, engine='openpyxl')
+
+                    with st.spinner('Menyuntikkan data ke template...'):
+                        uploaded_template.seek(0)
+                        final_xlsx = update_excel_template(uploaded_template, df_hasil)
+
+                    st.success("✅ Inject selesai!")
+
+                    current_month_name = datetime.now().strftime('%B').lower()
+                    st.download_button(
+                        label="⬇️ Unduh Hasil (Injected ke Template)",
+                        data=final_xlsx,
+                        file_name=f'Hasil_Template_{current_month_name}.xlsx',
+                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    )
+
+                except Exception as e:
+                    st.error(f"❌ Gagal inject. Error: {e}")
+        else:
+            st.info("💡 Upload kedua file di atas untuk mengaktifkan tombol inject.")
+
+if __name__ == '__main__':
+    main()
 
     # ============================================================
     # TAB 2: INJECT

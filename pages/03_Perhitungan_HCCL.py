@@ -74,6 +74,18 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Default emiten khusus (bisa diubah via Tab Konfigurasi)
+DEFAULT_EMITEN = {
+    'LPKR': 10_000_000_000,
+    'MLPL': 10_000_000_000,
+    'NOBU': 10_000_000_000,
+    'PTPP': 50_000_000_000,
+    'SILO': 10_000_000_000,
+}
+
+if 'override_mapping' not in st.session_state:
+    st.session_state['override_mapping'] = DEFAULT_EMITEN.copy()
+
 import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
@@ -88,11 +100,8 @@ COL_LISTED = 'CONCENTRATION LIMIT TERKENA % LISTED SHARES'
 COL_FF = 'CONCENTRATION LIMIT TERKENA % FREE FLOAT'
 COL_PERHITUNGAN = 'CONCENTRATION LIMIT SESUAI PERHITUNGAN'
 THRESHOLD_5M = 5_000_000_000
-KODE_EFEK_KHUSUS = ['LPKR', 'MLPL', 'NOBU', 'PTPP', 'SILO']
-OVERRIDE_MAPPING = {
-    'LPKR': 10_000_000_000, 'MLPL': 10_000_000_000,
-    'NOBU': 10_000_000_000, 'PTPP': 50_000_000_000, 'SILO': 10_000_000_000
-}
+OVERRIDE_MAPPING = st.session_state['override_mapping']
+KODE_EFEK_KHUSUS = list(OVERRIDE_MAPPING.keys())
 TARGET_100 = 100.0
 TOLERANCE = 1e-6
 
@@ -362,8 +371,8 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    tab1, tab2 = st.tabs(["📊 Hitung CL & Haircut", "💉 Inject ke Template"])
-
+    tab1, tab2, tab3 = st.tabs(["📊 Hitung CL & Haircut", "💉 Inject ke Template", "⚙️ Konfigurasi Emiten"])
+    
     with tab1:
         st.markdown("Unggah file sumber raw data untuk menjalankan perhitungan CL & Haircut.")
 
@@ -439,6 +448,75 @@ def main():
                     st.error(f"❌ Gagal inject. Error: {e}")
         else:
             st.info("💡 Upload kedua file di atas untuk mengaktifkan tombol inject.")
+
+    with tab3:
+        st.markdown("### Konfigurasi Emiten Khusus")
+        st.markdown("Daftar emiten yang dikenakan cap konsentrasi limit. Perubahan berlaku untuk perhitungan berikutnya.")
+    
+        current_mapping = st.session_state['override_mapping'].copy()
+    
+        st.markdown("**Emiten aktif:**")
+        to_delete = []
+        updated_mapping = {}
+    
+        for kode, nominal in current_mapping.items():
+            col1, col2, col3 = st.columns([2, 4, 1])
+            with col1:
+                st.text_input("Kode", value=kode, key=f"kode_{kode}", disabled=True)
+            with col2:
+                new_val = st.number_input(
+                    "Cap Nominal (Rp)",
+                    value=int(nominal),
+                    step=1_000_000_000,
+                    key=f"nominal_{kode}",
+                    format="%d"
+                )
+                updated_mapping[kode] = new_val
+            with col3:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("🗑️", key=f"del_{kode}"):
+                    to_delete.append(kode)
+    
+        for k in to_delete:
+            updated_mapping.pop(k, None)
+    
+        st.markdown("---")
+        st.markdown("**Tambah emiten baru:**")
+        col1, col2 = st.columns([2, 4])
+        with col1:
+            new_kode = st.text_input("Kode Efek Baru", key="new_kode").upper().strip()
+        with col2:
+            new_nominal = st.number_input(
+                "Cap Nominal (Rp)",
+                value=10_000_000_000,
+                step=1_000_000_000,
+                key="new_nominal",
+                format="%d"
+            )
+    
+        col_btn1, col_btn2 = st.columns([1, 3])
+        with col_btn1:
+            if st.button("➕ Tambah", type="primary"):
+                if new_kode and new_kode not in updated_mapping:
+                    updated_mapping[new_kode] = new_nominal
+                    st.success(f"✅ {new_kode} ditambahkan.")
+                elif new_kode in updated_mapping:
+                    st.warning(f"⚠️ {new_kode} sudah ada.")
+                else:
+                    st.error("Kode efek tidak boleh kosong.")
+    
+        with col_btn2:
+            if st.button("💾 Simpan Perubahan"):
+                st.session_state['override_mapping'] = updated_mapping
+                st.success(f"✅ Konfigurasi disimpan. {len(updated_mapping)} emiten aktif.")
+    
+        st.markdown("---")
+        st.markdown("**Daftar aktif saat ini:**")
+        df_emiten = pd.DataFrame([
+            {'Kode Efek': k, 'Cap Nominal (Rp)': f"Rp {v:,.0f}"}
+            for k, v in st.session_state['override_mapping'].items()
+        ])
+        st.dataframe(df_emiten, use_container_width=True, hide_index=True)
 
 if __name__ == '__main__':
     main()

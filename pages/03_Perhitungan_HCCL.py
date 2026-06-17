@@ -358,11 +358,11 @@ def update_excel_template(file_template, df_hasil):
 
 def main():
    st.markdown("""
-<div class="main-header">
-  <h1>🛡️ Concentration Limit & Haircut Calculation</h1>
-  <p>Hitung CL & Haircut dari raw data, lalu inject hasil ke template Excel</p>
-</div>
-""", unsafe_allow_html=True)
+    <div class="main-header">
+      <h1>🛡️ Concentration Limit & Haircut Calculation</h1>
+      <p>Hitung CL & Haircut dari raw data, lalu inject hasil ke template Excel</p>
+    </div>
+    """, unsafe_allow_html=True)
 
     # ============================================================
     # TAB 1: HITUNG

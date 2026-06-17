@@ -363,7 +363,6 @@ def main():
   <p>Hitung CL & Haircut dari raw data, lalu inject hasil ke template Excel</p>
 </div>
 """, unsafe_allow_html=True)
-    tab1, tab2 = st.tabs(["📊 Hitung CL & Haircut", "💉 Inject ke Template"])
 
     # ============================================================
     # TAB 1: HITUNG

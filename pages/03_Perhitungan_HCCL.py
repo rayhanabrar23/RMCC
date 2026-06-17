@@ -257,7 +257,7 @@ def update_excel_template(file_template, df_hasil):
     for excel_row in ws_conc.iter_rows(min_row=5):
         kode = excel_row[2].value  # col C = index 2
         if kode is None:
-            break
+            continue
         kode = str(kode).strip()
         if kode not in hasil_map:
             continue
@@ -272,7 +272,7 @@ def update_excel_template(file_template, df_hasil):
     for excel_row in ws_hc.iter_rows(min_row=5):
         kode = excel_row[2].value  # col C = index 2
         if kode is None:
-            break
+            continue
         kode = str(kode).strip()
         if kode not in hasil_map:
             continue

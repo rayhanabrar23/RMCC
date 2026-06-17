@@ -5,8 +5,6 @@ if "login_status" not in st.session_state or not st.session_state["login_status"
     st.error("🚨 Akses Ditolak! Silakan login di halaman utama terlebih dahulu.")
     st.stop()
 
-from style_utils import apply_custom_style
-apply_custom_style()
 
 st.markdown("""
 <style>

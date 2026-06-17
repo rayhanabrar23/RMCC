@@ -291,65 +291,89 @@ def update_excel_template(file_template, df_hasil):
 def main():
     st.title("🛡️ Concentration Limit (CL) & Haircut Calculation")
 
-    current_month_name = datetime.now().strftime('%B').lower()
-    example_filename = f'HCCL_{current_month_name}.xlsx'
+    tab1, tab2 = st.tabs(["📊 Hitung CL & Haircut", "💉 Inject ke Template"])
 
-    st.markdown(f"Unggah file sumber data dan template target untuk menjalankan perhitungan CL & Haircut.")
+    # ============================================================
+    # TAB 1: HITUNG
+    # ============================================================
+    with tab1:
+        st.markdown("Unggah file sumber raw data untuk menjalankan perhitungan CL & Haircut.")
 
-    col1, col2 = st.columns(2)
-    with col1:
+        current_month_name = datetime.now().strftime('%B').lower()
+        example_filename = f'HCCL_{current_month_name}.xlsx'
+
         uploaded_file_cl = st.file_uploader(
             f"📂 Unggah File Sumber (misal: `{example_filename}`)",
             type=['xlsx'], key='cl_source'
         )
-    with col2:
-        uploaded_template = st.file_uploader(
-            "📋 Unggah Template Target (XLSX)",
-            type=['xlsx'], key='cl_template'
-        )
 
-    if uploaded_file_cl is not None:
-        if st.button("🚀 Jalankan Perhitungan CL", type="primary"):
-            try:
-                df_cl_source = pd.read_excel(uploaded_file_cl, engine='openpyxl')
+        if uploaded_file_cl is not None:
+            if st.button("🚀 Jalankan Perhitungan CL", type="primary"):
+                try:
+                    df_cl_source = pd.read_excel(uploaded_file_cl, engine='openpyxl')
 
-                with st.spinner('Menghitung Concentration Limit...'):
-                    df_cl_hasil = calculate_concentration_limit(df_cl_source)
+                    with st.spinner('Menghitung Concentration Limit...'):
+                        df_cl_hasil = calculate_concentration_limit(df_cl_source)
 
-                st.success("✅ Perhitungan Concentration Limit selesai!")
-                st.subheader("Hasil Concentration Limit (Tabel)")
-                st.dataframe(df_cl_hasil)
+                    st.success("✅ Perhitungan selesai!")
+                    st.subheader("Hasil (Tabel)")
+                    st.dataframe(df_cl_hasil)
 
-                month_name_lower_output = datetime.now().strftime('%B').lower()
+                    output_buffer_cl = BytesIO()
+                    df_cl_hasil.to_excel(output_buffer_cl, index=False)
+                    output_buffer_cl.seek(0)
 
-                # --- Opsi 1: Download hasil sebagai file Excel biasa ---
-                output_buffer_cl = BytesIO()
-                df_cl_hasil.to_excel(output_buffer_cl, index=False)
-                output_buffer_cl.seek(0)
+                    st.download_button(
+                        label="⬇️ Unduh Hasil (Excel)",
+                        data=output_buffer_cl,
+                        file_name=f'clhc_{current_month_name}.xlsx',
+                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    )
 
-                st.download_button(
-                    label="⬇️ Unduh Hasil (Excel Biasa)",
-                    data=output_buffer_cl,
-                    file_name=f'clhc_{month_name_lower_output}.xlsx',
-                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                )
+                except Exception as e:
+                    st.error(f"❌ Gagal. Pastikan format file benar. Error: {e}")
 
-                # --- Opsi 2: Inject ke template (jika template diunggah) ---
-                if uploaded_template is not None:
-                    uploaded_template.seek(0)
-                    final_xlsx = update_excel_template(uploaded_template, df_cl_hasil)
+    # ============================================================
+    # TAB 2: INJECT
+    # ============================================================
+    with tab2:
+        st.markdown("Unggah hasil perhitungan dari Tab 1 dan template target untuk inject.")
 
+        col1, col2 = st.columns(2)
+        with col1:
+            uploaded_hasil = st.file_uploader(
+                "📂 Unggah Hasil Perhitungan (dari Tab 1)",
+                type=['xlsx'], key='cl_hasil'
+            )
+        with col2:
+            uploaded_template = st.file_uploader(
+                "📋 Unggah Template Target (XLSX)",
+                type=['xlsx'], key='cl_template'
+            )
+
+        if uploaded_hasil is not None and uploaded_template is not None:
+            if st.button("💉 Inject ke Template", type="primary"):
+                try:
+                    df_hasil = pd.read_excel(uploaded_hasil, engine='openpyxl')
+
+                    with st.spinner('Menyuntikkan data ke template...'):
+                        uploaded_template.seek(0)
+                        final_xlsx = update_excel_template(uploaded_template, df_hasil)
+
+                    st.success("✅ Inject selesai!")
+
+                    current_month_name = datetime.now().strftime('%B').lower()
                     st.download_button(
                         label="⬇️ Unduh Hasil (Injected ke Template)",
                         data=final_xlsx,
-                        file_name=f'Hasil_Template_{month_name_lower_output}.xlsx',
+                        file_name=f'Hasil_Template_{current_month_name}.xlsx',
                         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                     )
-                else:
-                    st.info("💡 Upload Template Target di atas untuk menghasilkan file yang sudah ter-inject ke template.")
 
-            except Exception as e:
-                st.error(f"❌ Gagal dalam perhitungan CL. Pastikan format file benar. Error: {e}")
+                except Exception as e:
+                    st.error(f"❌ Gagal inject. Error: {e}")
+        else:
+            st.info("💡 Upload kedua file di atas untuk mengaktifkan tombol inject.")
 
 if __name__ == '__main__':
     main()

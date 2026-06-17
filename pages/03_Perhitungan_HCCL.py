@@ -326,7 +326,7 @@ def main():
                     st.download_button(
                         label="⬇️ Unduh Hasil (Excel)",
                         data=output_buffer_cl,
-                        file_name=f'clhc_{current_month_name}.xlsx',
+                        file_name=f'Hasil Raw Data HCCL_{current_month_name}.xlsx',
                         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                     )
 

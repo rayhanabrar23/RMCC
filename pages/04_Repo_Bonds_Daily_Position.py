@@ -126,7 +126,7 @@ def main():
     # Header
     st.markdown("""
     <div class="main-header">
-      <h1>🔄 Otomatisasi Repo Daily Position</h1>
+      <h1>🔄 Otomatisasi Repo Bonds Daily Position</h1>
       <p>Mengisi kolom <strong>Fair Price PHEI (J)</strong> dan update tanggal <strong>(A2)</strong> secara otomatis</p>
     </div>
     """, unsafe_allow_html=True)

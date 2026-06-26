@@ -3,7 +3,7 @@ import pandas as pd
 import io
 
 st.set_page_config(page_title="Rekap SID - Pendanaan & Jaminan", layout="wide")
-st.title("📊 Rekap SID, Nama Partisipan, Nilai Pendanaan, Nilai Jaminan, Maturity")
+st.title("Rekap SID, Nama Partisipan, Nilai Pendanaan, Nilai Jaminan, Maturity, Status")
 st.caption("Upload file A01 dan F06 (format .txt pipe-delimited) untuk menggabungkan datanya.")
 
 # ----------------------------------------------------------
@@ -21,6 +21,7 @@ st.sidebar.markdown("**File F06**")
 col_f06_sid = st.sidebar.number_input("F06 - posisi kolom SID", min_value=0, value=1, help="1 = kolom B")
 col_f06_pendanaan = st.sidebar.number_input("F06 - posisi kolom Nilai Pendanaan", min_value=0, value=9, help="9 = kolom J (cek ulang jika beda file)")
 col_f06_maturity = st.sidebar.number_input("F06 - posisi kolom Maturity", min_value=0, value=6, help="6 = kolom G (cek ulang jika beda file)")
+col_f06_kualitas = st.sidebar.number_input("F06 - posisi kolom Kode Kualitas", min_value=0, value=11, help="11 = kolom L (Status Lancar/Macet)")
 
 st.sidebar.info("Posisi dihitung mulai dari 0. Kolom A = 0, B = 1, C = 2, ... L = 11, Q = 16, dst.")
 
@@ -70,6 +71,22 @@ def parse_date(value):
         return value if value else None
 
 
+QUALITY_MAP = {
+    "1": "1-Lancar",
+    "2": "2-Dalam Perhatian Khusus",
+    "3": "3-Kurang Lancar",
+    "4": "4-Diragukan",
+    "5": "5-Macet",
+}
+
+
+def parse_quality(value):
+    value = value.strip()
+    if not value:
+        return None
+    return QUALITY_MAP.get(value, value)
+
+
 if file_a01 and file_f06:
     try:
         a01_rows = read_pipe_file(file_a01)
@@ -90,20 +107,21 @@ if file_a01 and file_f06:
             "Nilai Jaminan": "sum",
         })
 
-        # ---- Proses F06: SID, Nilai Pendanaan, Maturity ----
+        # ---- Proses F06: SID, Nilai Pendanaan, Maturity, Status Kualitas ----
         f06_records = []
         for r in f06_rows:
             sid = safe_get(r, col_f06_sid).strip()
             pendanaan = parse_number(safe_get(r, col_f06_pendanaan))
             maturity = parse_date(safe_get(r, col_f06_maturity))
+            status = parse_quality(safe_get(r, col_f06_kualitas))
             if sid:
-                f06_records.append((sid, pendanaan, maturity))
+                f06_records.append((sid, pendanaan, maturity, status))
 
-        df_f06 = pd.DataFrame(f06_records, columns=["SID", "Nilai Pendanaan", "Maturity"])
+        df_f06 = pd.DataFrame(f06_records, columns=["SID", "Nilai Pendanaan", "Maturity", "Status"])
 
         # ---- Gabungkan ----
         result = pd.merge(df_f06, df_a01_grouped, on="SID", how="left")
-        result = result[["SID", "Nama Partisipan", "Nilai Pendanaan", "Nilai Jaminan", "Maturity"]]
+        result = result[["SID", "Nama Partisipan", "Nilai Pendanaan", "Nilai Jaminan", "Maturity", "Status"]]
 
         n_missing = result["Nama Partisipan"].isna().sum()
         if n_missing > 0:

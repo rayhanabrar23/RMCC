@@ -39,11 +39,13 @@ st.sidebar.info("Periode otomatis dibaca dari header file F06 (baris H|). Tidak 
 # ----------------------------------------------------------
 # UPLOAD
 # ----------------------------------------------------------
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 with col1:
     file_a01 = st.file_uploader("Upload file A01 (.txt)", type=["txt"], key="a01")
 with col2:
     file_f06 = st.file_uploader("Upload file F06 (.txt)", type=["txt"], key="f06")
+with col3:
+    file_d02 = st.file_uploader("Upload file D02 (.txt) — opsional, untuk fallback nama nasabah", type=["txt"], key="d02")
 
 # ----------------------------------------------------------
 # HELPER FUNCTIONS
@@ -167,6 +169,7 @@ if file_a01 and file_f06:
     try:
         a01_rows, _          = read_pipe_file(file_a01)
         f06_rows, f06_header = read_pipe_file(file_f06)
+        d02_rows, _          = read_pipe_file(file_d02) if file_d02 else ([], [])
 
         # Auto-detect periode dari header F06
         report_year, report_month, report_date = detect_periode(f06_header)
@@ -195,23 +198,49 @@ if file_a01 and file_f06:
             columns=["fas_key", "Nama Partisipan", "Nilai Jaminan"]
         ) if a01_by_fas else pd.DataFrame(columns=["fas_key", "Nama Partisipan", "Nilai Jaminan"])
 
+        # ---- D02 (fallback nama nasabah via CIF) ----
+        # D02: col[1]=CIF, col[3]=Nama Nasabah
+        # F06: col[2]=CIF → dipakai untuk fallback jika A01 tidak punya baris untuk fasilitas tersebut
+        d02_by_cif = {}
+        for r in d02_rows:
+            if safe_get(r, 0).strip() != 'D':
+                continue
+            cif  = safe_get(r, 1).strip()
+            nama = safe_get(r, 3).strip()
+            if cif and nama:
+                d02_by_cif[cif] = nama
+
+        df_d02_cif = pd.DataFrame(
+            [(k, v) for k, v in d02_by_cif.items()],
+            columns=["cif_key", "Nama_D02"]
+        ) if d02_by_cif else pd.DataFrame(columns=["cif_key", "Nama_D02"])
+
         # ---- F06 ----
         f06_records = []
         for r in f06_rows:
             no_fas    = safe_get(r, col_f06_sid).strip()   # col[1] = No.Fasilitas
+            cif       = safe_get(r, 2).strip()              # col[2] = CIF nasabah
             pendanaan = parse_number(safe_get(r, col_f06_pendanaan))
             maturity  = parse_date(safe_get(r, col_f06_maturity))
             status    = parse_quality(safe_get(r, col_f06_kualitas))
             jenis     = parse_jenis(safe_get(r, col_f06_jenis))
             if no_fas:
-                f06_records.append((no_fas, pendanaan, maturity, status, jenis))
+                f06_records.append((no_fas, cif, pendanaan, maturity, status, jenis))
 
         df_f06 = pd.DataFrame(f06_records,
-                              columns=["SID", "Nilai Pendanaan", "Maturity", "Status", "Jenis Transaksi"])
+                              columns=["SID", "CIF", "Nilai Pendanaan", "Maturity", "Status", "Jenis Transaksi"])
 
-        # ---- Join via No.Fasilitas ----
+        # ---- Join 1: via No.Fasilitas → dapat Nama & Jaminan dari A01 ----
         result = pd.merge(df_f06, df_a01_fas, left_on="SID", right_on="fas_key", how="left")
         result = result.drop(columns=["fas_key"], errors="ignore")
+
+        # ---- Join 2: via CIF → fallback Nama dari D02 jika A01 kosong ----
+        if not df_d02_cif.empty:
+            result = pd.merge(result, df_d02_cif, left_on="CIF", right_on="cif_key", how="left")
+            result["Nama Partisipan"] = result["Nama Partisipan"].fillna(result["Nama_D02"])
+            result = result.drop(columns=["Nama_D02", "cif_key"], errors="ignore")
+
+        result = result.drop(columns=["CIF"], errors="ignore")
         result["Nilai Jaminan"] = result["Nilai Jaminan"].fillna(0)
 
         result = result[["SID", "Nama Partisipan", "Jenis Transaksi",
@@ -226,7 +255,8 @@ if file_a01 and file_f06:
 
         n_missing = result["Nama Partisipan"].isna().sum()
         if n_missing > 0:
-            st.warning(f"⚠️ {n_missing} SID dari F06 tidak ditemukan pasangannya di A01.")
+            extra = " Coba upload file D02 untuk fallback nama nasabah." if not file_d02 else " Cek kelengkapan data D02."
+            st.warning(f"⚠️ {n_missing} fasilitas tidak ditemukan nama nasabahnya di A01/D02.{extra}")
 
         st.success(f"✅ Berhasil! {len(result)} baris dihasilkan. Periode: {report_date.strftime('%d %B %Y')}")
 

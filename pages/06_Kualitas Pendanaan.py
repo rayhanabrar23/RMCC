@@ -4,7 +4,7 @@ import io
 from datetime import date
 from calendar import monthrange
 
-st.set_page_config(page_title="Rekap No Kontrak - Pendanaan & Jaminan", layout="wide")
+st.set_page_config(page_title="Rekap SID - Pendanaan & Jaminan", layout="wide")
 st.title("Rekap SID, Nama Partisipan, Nilai Pendanaan, Nilai Jaminan, Maturity, Status")
 st.caption("Upload file A01 dan F06 (format .txt pipe-delimited) untuk menggabungkan datanya.")
 st.caption(
@@ -19,12 +19,12 @@ st.caption(
 st.sidebar.header("⚙️ Mapping Kolom (ubah jika perlu)")
 
 st.sidebar.markdown("**File A01**")
-col_a01_sid     = st.sidebar.number_input("A01 - posisi kolom No Kontrak",            min_value=0, value=2)
+col_a01_sid     = st.sidebar.number_input("A01 - posisi kolom SID",            min_value=0, value=2)
 col_a01_nama    = st.sidebar.number_input("A01 - posisi kolom Nama Partisipan", min_value=0, value=11)
 col_a01_jaminan = st.sidebar.number_input("A01 - posisi kolom Nilai Jaminan",   min_value=0, value=16)
 
 st.sidebar.markdown("**File F06**")
-col_f06_sid       = st.sidebar.number_input("F06 - posisi kolom Kontrak",                     min_value=0, value=1)
+col_f06_sid       = st.sidebar.number_input("F06 - posisi kolom SID",                     min_value=0, value=1)
 col_f06_pendanaan = st.sidebar.number_input("F06 - posisi kolom Nilai Pendanaan",          min_value=0, value=9)
 col_f06_maturity  = st.sidebar.number_input("F06 - posisi kolom Maturity",                 min_value=0, value=6)
 col_f06_kualitas  = st.sidebar.number_input("F06 - posisi kolom Kode Kualitas",            min_value=0, value=11)
@@ -92,9 +92,9 @@ def parse_date(value):
 
 QUALITY_MAP = {
     "1": "LANCAR",
-    "2": "2-Dalam Perhatian Khusus",
-    "3": "3-Kurang Lancar",
-    "4": "4-Diragukan",
+    "2": "DALAM PERHATIAN KHUSUS",
+    "3": "KURANG LANCAR",
+    "4": "DIRAGUKAN",
     "5": "MACET",
 }
 
@@ -143,30 +143,30 @@ BULAN_ID = [
 ]
 
 # Urutan status sesuai QUALITY_MAP
-STATUS_ORDER = ["1-Lancar", "2-Dalam Perhatian Khusus", "3-Kurang Lancar", "4-Diragukan", "5-Macet"]
+STATUS_ORDER = ["LANCAR", "DALAM PERHATIAN KHUSUS", "KURANG LANCAR", "DIRAGUKAN", "MACET"]
 
 STATUS_STYLE = {
-    "1-Lancar":                   {"bg": "#D6F0E6", "fg": "#0F6E56", "icon": "✅"},
-    "2-Dalam Perhatian Khusus":   {"bg": "#FEF3CD", "fg": "#856404", "icon": "⚠️"},
-    "3-Kurang Lancar":            {"bg": "#FDEBD0", "fg": "#7D3A14", "icon": "🔶"},
-    "4-Diragukan":                {"bg": "#FAD7D7", "fg": "#7A1B1A", "icon": "🔴"},
-    "5-Macet":                    {"bg": "#F0C0C0", "fg": "#5C0F0F", "icon": "🚫"},
+    "LANCAR":                   {"bg": "#D6F0E6", "fg": "#0F6E56", "icon": "✅"},
+    "DALAM PERHATIAN KHUSUS":   {"bg": "#FEF3CD", "fg": "#856404", "icon": "⚠️"},
+    "KURANG LANCAR":            {"bg": "#FDEBD0", "fg": "#7D3A14", "icon": "🔶"},
+    "DIRAGUKAN":                {"bg": "#FAD7D7", "fg": "#7A1B1A", "icon": "🔴"},
+    "MACET":                    {"bg": "#F0C0C0", "fg": "#5C0F0F", "icon": "🚫"},
 }
 
 BAR_HEX = {
-    "1-Lancar":                   "#1baf7a",
-    "2-Dalam Perhatian Khusus":   "#eda100",
-    "3-Kurang Lancar":            "#eb6834",
-    "4-Diragukan":                "#e34948",
-    "5-Macet":                    "#a32d2d",
+    "LANCAR":                   "#1baf7a",
+    "DALAM PERHATIAN KHUSUS":   "#eda100",
+    "KURANG LANCAR":            "#eb6834",
+    "DIRAGUKAN":                "#e34948",
+    "MACET":                    "#a32d2d",
 }
 
 STYLE_XL = {
-    "1-Lancar":                   "#D6F0E6",
-    "2-Dalam Perhatian Khusus":   "#FEF3CD",
-    "3-Kurang Lancar":            "#FDEBD0",
-    "4-Diragukan":                "#FAD7D7",
-    "5-Macet":                    "#F0C0C0",
+    "LANCAR":                   "#D6F0E6",
+    "DALAM PERHATIAN KHUSUS":   "#FEF3CD",
+    "KURANG LANCAR":            "#FDEBD0",
+    "DIRAGUKAN":                "#FAD7D7",
+    "MACET":                    "#F0C0C0",
 }
 
 # ----------------------------------------------------------
@@ -230,10 +230,10 @@ if file_a01 and file_f06:
                 f06_records.append((no_fas, cif, pendanaan, maturity, status, jenis, operasi))
 
         df_f06 = pd.DataFrame(f06_records,
-                              columns=["No Kontrak", "CIF", "Nilai Pendanaan", "Maturity", "Status", "Jenis Transaksi", "Keterangan Operasi Data"])
+                              columns=["SID", "CIF", "Nilai Pendanaan", "Maturity", "Status", "Jenis Transaksi", "Keterangan Operasi Data"])
 
         # ---- Join ----
-        result = pd.merge(df_f06, df_a01_fas, left_on="No Kontrak", right_on="fas_key", how="left")
+        result = pd.merge(df_f06, df_a01_fas, left_on="SID", right_on="fas_key", how="left")
         result = result.drop(columns=["fas_key"], errors="ignore")
 
         if not df_d02_cif.empty:
@@ -244,9 +244,9 @@ if file_a01 and file_f06:
         result = result.drop(columns=["CIF"], errors="ignore")
         result["Nilai Jaminan"] = result["Nilai Jaminan"].fillna(0)
 
-        result = result[["No Kontrak", "Nama Partisipan", "Jenis Transaksi",
+        result = result[["SID", "Nama Partisipan", "Jenis Transaksi",
                           "Nilai Pendanaan", "Nilai Jaminan", "Maturity", "Status", "Keterangan Operasi Data"]]
-        result = result.sort_values(["Nama Partisipan", "No Kontrak"], na_position="last").reset_index(drop=True)
+        result = result.sort_values(["Nama Partisipan", "SID"], na_position="last").reset_index(drop=True)
 
         n_missing = result["Nama Partisipan"].isna().sum()
         if n_missing > 0:
@@ -273,7 +273,7 @@ if file_a01 and file_f06:
             count = int(status_counts.get(st_key, 0))
             pct   = (count / total_kontrak * 100) if total_kontrak > 0 else 0
             s     = STATUS_STYLE[st_key]
-            label = st_key.split("-", 1)[1]  # strip angka prefix untuk label kartu
+            label = st_key  # sudah tanpa angka
             card_cols[i].markdown(
                 f"""<div style="background:{s['bg']};border-radius:10px;padding:16px 14px;min-height:110px;">
                     <p style="margin:0 0 4px;font-size:11px;color:{s['fg']};font-weight:600;line-height:1.3;">{s['icon']} {label}</p>
@@ -292,7 +292,7 @@ if file_a01 and file_f06:
             count = int(status_counts.get(st_key, 0))
             pct   = (count / total_kontrak * 100) if total_kontrak > 0 else 0
             if pct > 0:
-                label = st_key.split("-", 1)[1]
+                label = st_key
                 bar_html += (
                     f"<div style='width:{pct}%;background:{BAR_HEX[st_key]};border-radius:3px;'"
                     f" title='{label}: {count} ({pct:.1f}%)'></div>"
@@ -303,7 +303,7 @@ if file_a01 and file_f06:
         for st_key in STATUS_ORDER:
             count = int(status_counts.get(st_key, 0))
             if count > 0:
-                label = st_key.split("-", 1)[1]
+                label = st_key
                 legend_html += (
                     f"<span style='display:flex;align-items:center;gap:4px;'>"
                     f"<span style='width:10px;height:10px;border-radius:2px;"

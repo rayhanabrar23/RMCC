@@ -4,7 +4,7 @@ import io
 from datetime import date
 from calendar import monthrange
 
-st.set_page_config(page_title="Rekap SID - Pendanaan & Jaminan", layout="wide")
+st.set_page_config(page_title="Rekap No Kontrak - Pendanaan & Jaminan", layout="wide")
 st.title("Rekap SID, Nama Partisipan, Nilai Pendanaan, Nilai Jaminan, Maturity, Status")
 st.caption("Upload file A01 dan F06 (format .txt pipe-delimited) untuk menggabungkan datanya.")
 st.caption(
@@ -19,12 +19,12 @@ st.caption(
 st.sidebar.header("⚙️ Mapping Kolom (ubah jika perlu)")
 
 st.sidebar.markdown("**File A01**")
-col_a01_sid     = st.sidebar.number_input("A01 - posisi kolom SID",            min_value=0, value=2)
+col_a01_sid     = st.sidebar.number_input("A01 - posisi kolom No Kontrak",            min_value=0, value=2)
 col_a01_nama    = st.sidebar.number_input("A01 - posisi kolom Nama Partisipan", min_value=0, value=11)
 col_a01_jaminan = st.sidebar.number_input("A01 - posisi kolom Nilai Jaminan",   min_value=0, value=16)
 
 st.sidebar.markdown("**File F06**")
-col_f06_sid       = st.sidebar.number_input("F06 - posisi kolom SID",                     min_value=0, value=1)
+col_f06_sid       = st.sidebar.number_input("F06 - posisi kolom Kontrak",                     min_value=0, value=1)
 col_f06_pendanaan = st.sidebar.number_input("F06 - posisi kolom Nilai Pendanaan",          min_value=0, value=9)
 col_f06_maturity  = st.sidebar.number_input("F06 - posisi kolom Maturity",                 min_value=0, value=6)
 col_f06_kualitas  = st.sidebar.number_input("F06 - posisi kolom Kode Kualitas",            min_value=0, value=11)
@@ -230,10 +230,10 @@ if file_a01 and file_f06:
                 f06_records.append((no_fas, cif, pendanaan, maturity, status, jenis, operasi))
 
         df_f06 = pd.DataFrame(f06_records,
-                              columns=["SID", "CIF", "Nilai Pendanaan", "Maturity", "Status", "Jenis Transaksi", "Keterangan Operasi Data"])
+                              columns=["No Kontrak", "CIF", "Nilai Pendanaan", "Maturity", "Status", "Jenis Transaksi", "Keterangan Operasi Data"])
 
         # ---- Join ----
-        result = pd.merge(df_f06, df_a01_fas, left_on="SID", right_on="fas_key", how="left")
+        result = pd.merge(df_f06, df_a01_fas, left_on="No Kontrak", right_on="fas_key", how="left")
         result = result.drop(columns=["fas_key"], errors="ignore")
 
         if not df_d02_cif.empty:
@@ -244,9 +244,9 @@ if file_a01 and file_f06:
         result = result.drop(columns=["CIF"], errors="ignore")
         result["Nilai Jaminan"] = result["Nilai Jaminan"].fillna(0)
 
-        result = result[["SID", "Nama Partisipan", "Jenis Transaksi",
+        result = result[["No Kontrak", "Nama Partisipan", "Jenis Transaksi",
                           "Nilai Pendanaan", "Nilai Jaminan", "Maturity", "Status", "Keterangan Operasi Data"]]
-        result = result.sort_values(["Nama Partisipan", "SID"], na_position="last").reset_index(drop=True)
+        result = result.sort_values(["Nama Partisipan", "No Kontrak"], na_position="last").reset_index(drop=True)
 
         n_missing = result["Nama Partisipan"].isna().sum()
         if n_missing > 0:

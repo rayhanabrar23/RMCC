@@ -119,6 +119,21 @@ def parse_jenis(value):
     value = value.strip()
     return JENIS_FASILITAS_MAP.get(value, value) if value else None
 
+# Kode "Operasi Data" (kolom paling akhir tiap baris detail SLIK):
+# - C = Create  -> baris/kontrak baru pertama kali muncul di bulan laporan ini
+# - U = Update  -> kontrak sudah dilaporkan di bulan sebelumnya, dilaporkan ulang
+#                  (bisa ada perubahan status/kualitas/nilai/maturity, atau tetap sama)
+# - D = Delete  -> baris dihapus dari pelaporan (biasanya koreksi atas kesalahan input)
+OPERASI_DATA_MAP = {
+    "C": "🆕 Baru (Create)",
+    "U": "🔄 Update",
+    "D": "🗑️ Dihapus (Delete)",
+}
+
+def parse_operasi(value):
+    value = value.strip().upper()
+    return OPERASI_DATA_MAP.get(value, value) if value else None
+
 # ----------------------------------------------------------
 # KONSTANTA STYLING DASHBOARD
 # ----------------------------------------------------------
@@ -210,11 +225,12 @@ if file_a01 and file_f06:
             maturity  = parse_date(safe_get(r, col_f06_maturity))
             status    = parse_quality(safe_get(r, col_f06_kualitas))
             jenis     = parse_jenis(safe_get(r, col_f06_jenis))
+            operasi   = parse_operasi(safe_get(r, len(r) - 1))
             if no_fas:
-                f06_records.append((no_fas, cif, pendanaan, maturity, status, jenis))
+                f06_records.append((no_fas, cif, pendanaan, maturity, status, jenis, operasi))
 
         df_f06 = pd.DataFrame(f06_records,
-                              columns=["SID", "CIF", "Nilai Pendanaan", "Maturity", "Status", "Jenis Transaksi"])
+                              columns=["SID", "CIF", "Nilai Pendanaan", "Maturity", "Status", "Jenis Transaksi", "Keterangan Operasi Data"])
 
         # ---- Join ----
         result = pd.merge(df_f06, df_a01_fas, left_on="SID", right_on="fas_key", how="left")
@@ -229,7 +245,7 @@ if file_a01 and file_f06:
         result["Nilai Jaminan"] = result["Nilai Jaminan"].fillna(0)
 
         result = result[["SID", "Nama Partisipan", "Jenis Transaksi",
-                          "Nilai Pendanaan", "Nilai Jaminan", "Maturity", "Status"]]
+                          "Nilai Pendanaan", "Nilai Jaminan", "Maturity", "Status", "Keterangan Operasi Data"]]
         result = result.sort_values(["Nama Partisipan", "SID"], na_position="last").reset_index(drop=True)
 
         n_missing = result["Nama Partisipan"].isna().sum()
@@ -297,6 +313,32 @@ if file_a01 and file_f06:
         legend_html += "</div>"
 
         st.markdown(bar_html + legend_html, unsafe_allow_html=True)
+
+        # ----------------------------------------------------------
+        # RINGKASAN OPERASI DATA (trade adjustment: Create / Update / Delete)
+        # ----------------------------------------------------------
+        st.markdown("---")
+        st.subheader("🔁 Ringkasan Operasi Data (Trade Adjustment)")
+        st.caption(
+            "Menunjukkan kontrak mana yang baru muncul (Create), sudah ada sebelumnya dan dilaporkan "
+            "ulang (Update), atau dihapus dari pelaporan (Delete) pada bulan ini."
+        )
+        operasi_counts = result["Keterangan Operasi Data"].value_counts()
+        op_cols = st.columns(len(OPERASI_DATA_MAP))
+        for i, (code, label) in enumerate(OPERASI_DATA_MAP.items()):
+            count = int(operasi_counts.get(label, 0))
+            op_cols[i].metric(label, f"{count:,}")
+
+        with st.expander("📌 Lihat kontrak yang Baru (Create) atau Dihapus (Delete) bulan ini"):
+            mask = result["Keterangan Operasi Data"].isin([OPERASI_DATA_MAP["C"], OPERASI_DATA_MAP["D"]])
+            st.dataframe(
+                result[mask].style.format({
+                    "Nilai Pendanaan": "{:,.0f}",
+                    "Nilai Jaminan":   "{:,.0f}",
+                }),
+                use_container_width=True,
+            )
+
         st.markdown("---")
 
         # ---- Tabel utama ----
@@ -321,6 +363,8 @@ if file_a01 and file_f06:
             for col_idx, col_name in enumerate(result.columns):
                 if col_name in ("Nilai Pendanaan", "Nilai Jaminan"):
                     ws_rekap.set_column(col_idx, col_idx, 20, fmt_num)
+                elif col_name == "Keterangan Operasi Data":
+                    ws_rekap.set_column(col_idx, col_idx, 20)
                 else:
                     ws_rekap.set_column(col_idx, col_idx, 22)
 
@@ -353,9 +397,27 @@ if file_a01 and file_f06:
                 ws_dash.write(4 + ri, 2, pct_k,     fmt_pct_k)
                 ws_dash.write(4 + ri, 3, nasabah_k, fmt_num_k)
 
+            # Sheet 3: Ringkasan operasi data (create/update/delete)
+            ws_op = wb.add_worksheet("Ringkasan Operasi Data")
+            ws_op.write(0, 0, f"Ringkasan Operasi Data (Trade Adjustment) — {BULAN_ID[report_month-1]} {report_year}", fmt_title)
+            op_headers = ["Operasi Data", "Jumlah Kontrak", "% Kontrak"]
+            for ci, h in enumerate(op_headers):
+                ws_op.write(2, ci, h, fmt_hdr)
+            ws_op.set_column(0, 0, 26)
+            ws_op.set_column(1, 2, 16)
+            for ri, (code, label) in enumerate(OPERASI_DATA_MAP.items()):
+                count_o = int(operasi_counts.get(label, 0))
+                pct_o   = count_o / total_kontrak if total_kontrak > 0 else 0
+                fmt_num_o = wb.add_format({"align": "center", "border": 1, "num_format": "#,##0"})
+                fmt_pct_o = wb.add_format({"align": "center", "border": 1, "num_format": "0.0%"})
+                fmt_lbl_o = wb.add_format({"bold": True, "border": 1})
+                ws_op.write(3 + ri, 0, label,   fmt_lbl_o)
+                ws_op.write(3 + ri, 1, count_o, fmt_num_o)
+                ws_op.write(3 + ri, 2, pct_o,   fmt_pct_o)
+
         buffer.seek(0)
         st.download_button(
-            label="⬇️ Download hasil (Excel) — Rekap + Ringkasan Status",
+            label="⬇️ Download hasil (Excel) — Rekap + Ringkasan Status + Ringkasan Operasi Data",
             data=buffer,
             file_name="rekap_slik.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

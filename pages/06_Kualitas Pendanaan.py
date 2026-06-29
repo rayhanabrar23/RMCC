@@ -165,8 +165,14 @@ BULAN_ID = [
 # ----------------------------------------------------------
 if file_a01 and file_f06:
     try:
-        a01_rows = read_pipe_file(file_a01)
-        f06_rows = read_pipe_file(file_f06)
+        a01_rows, _          = read_pipe_file(file_a01)
+        f06_rows, f06_header = read_pipe_file(file_f06)
+
+        # Auto-detect periode dari header F06
+        report_year, report_month, report_date = detect_periode(f06_header)
+        if not report_date:
+            st.error("❌ Gagal membaca periode dari header file F06. Pastikan format header: H|kode|inst|YYYY|MM|F06|n|n")
+            st.stop()
 
         # ---- A01 ----
         a01_records = []

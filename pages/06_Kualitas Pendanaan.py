@@ -34,12 +34,7 @@ st.sidebar.info("Posisi dihitung mulai dari 0. Kolom A=0, B=1, C=2, ... L=11, Q=
 
 st.sidebar.markdown("---")
 st.sidebar.header("📅 Periode Pelaporan")
-report_year  = st.sidebar.number_input("Tahun pelaporan", min_value=2000, max_value=2099, value=2022)
-report_month = st.sidebar.number_input("Bulan pelaporan (1-12)", min_value=1, max_value=12, value=3)
-
-# Tanggal akhir bulan pelaporan
-last_day     = monthrange(report_year, report_month)[1]
-report_date  = date(report_year, report_month, last_day)
+st.sidebar.info("Periode otomatis dibaca dari header file F06 (baris H|). Tidak perlu diisi manual.")
 
 # ----------------------------------------------------------
 # UPLOAD
@@ -54,14 +49,34 @@ with col2:
 # HELPER FUNCTIONS
 # ----------------------------------------------------------
 def read_pipe_file(uploaded_file):
+    """Baca file pipe-delimited, skip baris header (diawali 'H|'). Return (rows, header_cols)."""
     content = uploaded_file.read().decode("utf-8", errors="ignore")
     rows = []
+    header_cols = []
     for line in content.splitlines():
         line = line.rstrip("\r\n")
-        if not line or line.startswith("H|"):
+        if not line:
+            continue
+        if line.startswith("H|"):
+            header_cols = line.split("|")
             continue
         rows.append(line.split("|"))
-    return rows
+    return rows, header_cols
+
+def detect_periode(header_cols):
+    """
+    Baca tahun & bulan dari header F06.
+    Format: H|0402|016357|YYYY|MM|F06|n|n
+    index:   0   1      2    3   4   5
+    """
+    try:
+        yr  = int(header_cols[3])
+        mo  = int(header_cols[4])
+        last_day   = monthrange(yr, mo)[1]
+        report_dt  = date(yr, mo, last_day)
+        return yr, mo, report_dt
+    except Exception:
+        return None, None, None
 
 def safe_get(row, idx):
     return row[idx] if idx < len(row) else ""

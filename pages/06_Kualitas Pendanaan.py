@@ -91,11 +91,11 @@ def parse_date(value):
         return None
 
 QUALITY_MAP = {
-    "1": "1-Lancar",
+    "1": "LANCAR",
     "2": "2-Dalam Perhatian Khusus",
     "3": "3-Kurang Lancar",
     "4": "4-Diragukan",
-    "5": "5-Macet",
+    "5": "MACET",
 }
 
 def parse_quality(value):

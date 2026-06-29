@@ -175,38 +175,48 @@ if file_a01 and file_f06:
             st.stop()
 
         # ---- A01 ----
-        a01_records = []
+        # Semua baris A01 (Margin & REPO) pakai struktur yang sama:
+        # col[2]=No.Fasilitas, col[11]=Nama Nasabah, col[15]=Nilai Jaminan
+        # Join ke F06 via No.Fasilitas (F06 col[1])
+        a01_by_fas = {}
         for r in a01_rows:
-            sid     = safe_get(r, col_a01_sid).strip()
-            nama    = safe_get(r, col_a01_nama).strip()
-            jaminan = parse_number(safe_get(r, col_a01_jaminan))
-            if sid:
-                a01_records.append((sid, nama, jaminan))
+            if safe_get(r, 0).strip() != 'D':
+                continue
+            no_fas  = safe_get(r, 2).strip()
+            nama    = safe_get(r, 11).strip()
+            jaminan = parse_number(safe_get(r, 15))
+            if no_fas:
+                if no_fas not in a01_by_fas:
+                    a01_by_fas[no_fas] = [nama, 0.0]
+                a01_by_fas[no_fas][1] += jaminan
 
-        df_a01 = pd.DataFrame(a01_records, columns=["SID","Nama Partisipan","Nilai Jaminan"])
-        df_a01_grouped = df_a01.groupby("SID", as_index=False).agg(
-            {"Nama Partisipan":"first", "Nilai Jaminan":"sum"}
-        )
+        df_a01_fas = pd.DataFrame(
+            [(k, v[0], v[1]) for k, v in a01_by_fas.items()],
+            columns=["fas_key", "Nama Partisipan", "Nilai Jaminan"]
+        ) if a01_by_fas else pd.DataFrame(columns=["fas_key", "Nama Partisipan", "Nilai Jaminan"])
 
         # ---- F06 ----
         f06_records = []
         for r in f06_rows:
-            sid       = safe_get(r, col_f06_sid).strip()
+            no_fas    = safe_get(r, col_f06_sid).strip()   # col[1] = No.Fasilitas
             pendanaan = parse_number(safe_get(r, col_f06_pendanaan))
             maturity  = parse_date(safe_get(r, col_f06_maturity))
             status    = parse_quality(safe_get(r, col_f06_kualitas))
             jenis     = parse_jenis(safe_get(r, col_f06_jenis))
-            if sid:
-                f06_records.append((sid, pendanaan, maturity, status, jenis))
+            if no_fas:
+                f06_records.append((no_fas, pendanaan, maturity, status, jenis))
 
         df_f06 = pd.DataFrame(f06_records,
-                              columns=["SID","Nilai Pendanaan","Maturity","Status","Jenis Transaksi"])
+                              columns=["SID", "Nilai Pendanaan", "Maturity", "Status", "Jenis Transaksi"])
 
-        # ---- Join ----
-        result = pd.merge(df_f06, df_a01_grouped, on="SID", how="left")
-        result = result[["SID","Nama Partisipan","Jenis Transaksi",
-                          "Nilai Pendanaan","Nilai Jaminan","Maturity","Status"]]
-        result = result.sort_values(["Nama Partisipan","SID"], na_position="last").reset_index(drop=True)
+        # ---- Join via No.Fasilitas ----
+        result = pd.merge(df_f06, df_a01_fas, left_on="SID", right_on="fas_key", how="left")
+        result = result.drop(columns=["fas_key"], errors="ignore")
+        result["Nilai Jaminan"] = result["Nilai Jaminan"].fillna(0)
+
+        result = result[["SID", "Nama Partisipan", "Jenis Transaksi",
+                          "Nilai Pendanaan", "Nilai Jaminan", "Maturity", "Status"]]
+        result = result.sort_values(["Nama Partisipan", "SID"], na_position="last").reset_index(drop=True)
 
         # ---- Kolektibilitas (POJK 40/2019) ----
         result["Kolektibilitas"] = result.apply(

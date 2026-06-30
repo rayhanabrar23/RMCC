@@ -40,6 +40,7 @@ col_f06_cif       = st.sidebar.number_input("F06 - posisi kolom CIF",           
 col_f06_pendanaan = st.sidebar.number_input("F06 - posisi kolom Nilai Pendanaan",           min_value=0, value=9)
 col_f06_maturity  = st.sidebar.number_input("F06 - posisi kolom Maturity",                  min_value=0, value=6)
 col_f06_jenis     = st.sidebar.number_input("F06 - posisi kolom Kode Jenis Fasilitas Lain", min_value=0, value=3)
+col_f06_kualitas  = st.sidebar.number_input("F06 - posisi kolom Kode Kualitas",             min_value=0, value=11)
 
 st.sidebar.markdown("**D02 (opsional, fallback nama)**")
 col_d02_cif  = st.sidebar.number_input("D02 - posisi kolom CIF",  min_value=0, value=1)
@@ -70,6 +71,18 @@ JENIS_RAW_LABEL = {
 def label_jenis(code):
     code = (code or "").strip()
     return JENIS_TO_LABEL.get(code, JENIS_RAW_LABEL.get(code, f"Pendanaan Lainnya ({code})"))
+
+QUALITY_MAP = {
+    "1": "LANCAR",
+    "2": "DALAM PERHATIAN KHUSUS",
+    "3": "KURANG LANCAR",
+    "4": "DIRAGUKAN",
+    "5": "MACET",
+}
+
+def parse_quality(value):
+    value = (value or "").strip()
+    return QUALITY_MAP.get(value, value) if value else None
 
 # ----------------------------------------------------------
 # HELPER PARSING (sama seperti versi sebelumnya)
@@ -210,18 +223,20 @@ elif files_a01 and files_f06:
                 pendanaan = parse_number(safe_get(r, col_f06_pendanaan))
                 maturity  = parse_date(safe_get(r, col_f06_maturity))
                 jenis     = safe_get(r, col_f06_jenis).strip()
+                kualitas  = safe_get(r, col_f06_kualitas).strip()
                 if no_fas:
-                    f06_records.append((no_fas, cif, pendanaan, maturity, jenis))
+                    f06_records.append((no_fas, cif, pendanaan, maturity, jenis, kualitas))
 
             df_f06 = pd.DataFrame(
                 f06_records,
-                columns=["SID", "CIF", "Nilai Pendanaan", "Maturity", "Kode Jenis"]
+                columns=["SID", "CIF", "Nilai Pendanaan", "Maturity", "Kode Jenis", "Kode Kualitas"]
             )
             if df_f06.empty:
                 st.warning(f"⚠️ Batch #{i}: file F06 ({ff06.name}) tidak menghasilkan baris data.")
                 continue
 
             df_f06["Tipe Pendanaan"] = df_f06["Kode Jenis"].apply(label_jenis)
+            df_f06["Status"] = df_f06["Kode Kualitas"].apply(parse_quality)
 
             result = pd.merge(df_f06, df_a01_fas, left_on="SID", right_on="fas_key", how="left")
             result = result.drop(columns=["fas_key"], errors="ignore")
@@ -263,7 +278,14 @@ elif files_a01 and files_f06:
         if n_missing > 0:
             st.warning(f"⚠️ {n_missing} fasilitas tidak ditemukan nama nasabahnya di A01/D02.")
 
-        final = final[["Tipe Pendanaan", "Nama Partisipan", "Nilai Pendanaan", "Nilai Jaminan", "Maturity", "Batch"]]
+        n_status_missing = final["Status"].isna().sum()
+        if n_status_missing > 0:
+            st.warning(
+                f"⚠️ {n_status_missing} baris tidak punya Status/Kualitas Pendanaan yang valid. "
+                f"Cek posisi kolom 'F06 - posisi kolom Kode Kualitas' di sidebar, mungkin salah."
+            )
+
+        final = final[["Tipe Pendanaan", "Nama Partisipan", "Nilai Pendanaan", "Nilai Jaminan", "Maturity", "Status", "Batch"]]
         final = final.sort_values(["Tipe Pendanaan", "Nama Partisipan"], na_position="last").reset_index(drop=True)
 
         st.success(
@@ -355,15 +377,9 @@ elif files_a01 and files_f06:
             jumlah_hari = 0  # karena K (Tanggal Macet) tidak diisi otomatis
             ws.cell(row=r, column=8).value = jumlah_hari
 
-            # I (Status / Kualitas Pendanaan) -> dihitung langsung sebagai value, bukan formula
-            if tipe_pendanaan == "Pendanaan Transaksi Marjin":
-                # F (Net Cash Shortfall) selalu 0 karena tidak ada input manual -> otomatis LANCAR
-                status = "LANCAR"
-            else:
-                if maturity_ts is not None and maturity_ts.date() > report_date:
-                    status = "LANCAR"
-                else:
-                    status = "CEK JUMLAH HARI"
+            # I (Status / Kualitas Pendanaan) -> diambil langsung dari Kode Kualitas F06
+            # (LANCAR / DALAM PERHATIAN KHUSUS / KURANG LANCAR / DIRAGUKAN / MACET)
+            status = row["Status"] if pd.notna(row["Status"]) else ""
             ws.cell(row=r, column=9).value = status
 
             # K (Tanggal Macet) sengaja dikosongkan -> diisi manual oleh user jika ada kontrak macet

@@ -20,22 +20,10 @@ st.caption(
     "Partisipan sama (misal beberapa kontrak REPO) tetap tampil sebagai baris terpisah."
 )
 
-def get_template_bytes():
-    """Load template.xlsx dari folder yang SAMA dengan file script ini,
-    bukan dari current working directory. Ini penting untuk Streamlit
-    multipage app, karena saat dijalankan dari pages/, cwd Streamlit
-    biasanya root project, bukan folder pages/."""
-    this_dir = os.path.dirname(os.path.abspath(__file__))
-    template_path = os.path.join(this_dir, "template.xlsx")
-    if not os.path.exists(template_path):
-        st.error(
-            f"❌ File template.xlsx tidak ditemukan di folder: {this_dir}\n\n"
-            f"Pastikan file `template.xlsx` ada di folder yang SAMA dengan file "
-            f"`{os.path.basename(__file__)}` (biasanya folder `pages/`)."
-        )
-        st.stop()
-    with open(template_path, "rb") as f:
-        return io.BytesIO(f.read())
+def get_template_bytes(uploaded_template_file):
+    """Template diambil dari file yang diupload user (bukan file di server),
+    supaya tidak ada masalah path sama sekali di Streamlit multipage app."""
+    return io.BytesIO(uploaded_template_file.read())
 
 # ----------------------------------------------------------
 # SIDEBAR - mapping kolom
@@ -135,6 +123,15 @@ st.caption(
     "(file A01 ke-1 dipasangkan dengan file F06 ke-1, dst). Boleh upload >3 file sekaligus."
 )
 
+st.subheader("📐 Upload Template Excel")
+st.caption(
+    "Upload file template Excel asli (format, font, kolom hidden, dll). File ini yang akan "
+    "diisi otomatis dan dijadikan hasil akhir — formatnya tidak akan diubah sama sekali."
+)
+template_file = st.file_uploader("Upload Template (.xlsx)", type=["xlsx"], key="template")
+
+st.markdown("---")
+
 col1, col2, col3 = st.columns(3)
 with col1:
     files_a01 = st.file_uploader("Upload semua file A01 (.txt)", type=["txt"], key="a01", accept_multiple_files=True)
@@ -155,7 +152,9 @@ if periode_override:
 # ----------------------------------------------------------
 # PROCESS
 # ----------------------------------------------------------
-if files_a01 and files_f06:
+if not template_file:
+    st.info("⬆️ Silakan upload file Template Excel dulu di atas.")
+elif files_a01 and files_f06:
     if len(files_a01) != len(files_f06):
         st.error(f"❌ Jumlah file A01 ({len(files_a01)}) dan F06 ({len(files_f06)}) tidak sama. "
                  f"Setiap batch harus punya pasangan A01 + F06.")
@@ -281,7 +280,7 @@ if files_a01 and files_f06:
         # ----------------------------------------------------------
         # ISI KE TEMPLATE EXCEL ASLI
         # ----------------------------------------------------------
-        wb = openpyxl.load_workbook(get_template_bytes())
+        wb = openpyxl.load_workbook(get_template_bytes(template_file))
         ws = wb.worksheets[0]
 
         TEMPLATE_FIRST_DATA_ROW = 5

@@ -293,6 +293,26 @@ elif files_a01 and files_f06:
             f"Periode: {report_date.strftime('%d %B %Y')}"
         )
 
+        # ----------------------------------------------------------
+        # DASHBOARD RINGKASAN STATUS
+        # ----------------------------------------------------------
+        st.subheader("🏦 Ringkasan Status Kualitas Kredit")
+        STATUS_ORDER = ["LANCAR", "DALAM PERHATIAN KHUSUS", "KURANG LANCAR", "DIRAGUKAN", "MACET"]
+        status_counts = final["Status"].value_counts()
+        total_kontrak = len(final)
+
+        dash_cols = st.columns(5)
+        for i, st_key in enumerate(STATUS_ORDER):
+            count = int(status_counts.get(st_key, 0))
+            pct = (count / total_kontrak * 100) if total_kontrak > 0 else 0
+            dash_cols[i].metric(st_key, f"{count:,}", f"{pct:.1f}%")
+
+        st.caption(
+            f"Total kontrak: **{total_kontrak:,}** dari **{len(all_results)} batch** file. "
+            f"Periode: **{report_date.strftime('%d %B %Y')}**"
+        )
+        st.markdown("---")
+
         st.subheader("📋 Preview Data Gabungan (sebelum dimasukkan ke template)")
         st.dataframe(
             final.style.format({"Nilai Pendanaan": "{:,.0f}", "Nilai Jaminan": "{:,.0f}"}),
@@ -380,7 +400,14 @@ elif files_a01 and files_f06:
             # I (Status / Kualitas Pendanaan) -> diambil langsung dari Kode Kualitas F06
             # (LANCAR / DALAM PERHATIAN KHUSUS / KURANG LANCAR / DIRAGUKAN / MACET)
             status = row["Status"] if pd.notna(row["Status"]) else ""
-            ws.cell(row=r, column=9).value = status
+            i_cell = ws.cell(row=r, column=9)
+            i_cell.value = status
+            if status == "MACET":
+                old_font = i_cell.font
+                i_cell.font = openpyxl.styles.Font(
+                    name=old_font.name, size=old_font.size, bold=old_font.bold,
+                    italic=old_font.italic, color="FFFF0000",
+                )
 
             # K (Tanggal Macet) sengaja dikosongkan -> diisi manual oleh user jika ada kontrak macet
 

@@ -331,20 +331,41 @@ elif files_a01 and files_f06:
             else:
                 ws.cell(row=r, column=1).value = f"=A{r-1}+1"
 
-            ws.cell(row=r, column=2).value = row["Tipe Pendanaan"]          # B
-            ws.cell(row=r, column=3).value = row["Nama Partisipan"]        # C
-            ws.cell(row=r, column=4).value = row["Nilai Pendanaan"]        # D
-            ws.cell(row=r, column=5).value = row["Nilai Jaminan"]          # E
-            ws.cell(row=r, column=6).value = 0                              # F - manual (Net Cash Shortfall), default 0
-            if pd.notna(row["Maturity"]):
-                ws.cell(row=r, column=7).value = pd.Timestamp(row["Maturity"])  # G
+            tipe_pendanaan = row["Tipe Pendanaan"]
+            nilai_pendanaan = row["Nilai Pendanaan"]
+            nilai_jaminan = row["Nilai Jaminan"]
+            maturity_val = row["Maturity"]
+
+            ws.cell(row=r, column=2).value = tipe_pendanaan          # B
+            ws.cell(row=r, column=3).value = row["Nama Partisipan"]  # C
+            ws.cell(row=r, column=4).value = nilai_pendanaan         # D
+            ws.cell(row=r, column=5).value = nilai_jaminan           # E
+            ws.cell(row=r, column=6).value = 0                        # F - manual (Net Cash Shortfall), default 0
+
+            if pd.notna(maturity_val):
+                maturity_ts = pd.Timestamp(maturity_val)
+                g_cell = ws.cell(row=r, column=7)
+                g_cell.value = maturity_ts
+                g_cell.number_format = "dd/mm/yyyy"  # short date sesuai permintaan
             else:
+                maturity_ts = None
                 ws.cell(row=r, column=7).value = 0
-            ws.cell(row=r, column=8).value = f"=IF(ISBLANK(K{r}),0,$B$3-K{r})"  # H
-            ws.cell(row=r, column=9).value = (
-                f'=IF(B{r}="Pendanaan Transaksi Marjin",IF(F{r}<=0,"LANCAR", "CEK JUMLAH HARI"),'
-                f'IF(G{r}>$B$3,"LANCAR","CEK JUMLAH HARI"))'
-            )  # I
+
+            # H (Jumlah Hari) -> dihitung langsung sebagai value (K kosong -> 0)
+            jumlah_hari = 0  # karena K (Tanggal Macet) tidak diisi otomatis
+            ws.cell(row=r, column=8).value = jumlah_hari
+
+            # I (Status / Kualitas Pendanaan) -> dihitung langsung sebagai value, bukan formula
+            if tipe_pendanaan == "Pendanaan Transaksi Marjin":
+                # F (Net Cash Shortfall) selalu 0 karena tidak ada input manual -> otomatis LANCAR
+                status = "LANCAR"
+            else:
+                if maturity_ts is not None and maturity_ts.date() > report_date:
+                    status = "LANCAR"
+                else:
+                    status = "CEK JUMLAH HARI"
+            ws.cell(row=r, column=9).value = status
+
             # K (Tanggal Macet) sengaja dikosongkan -> diisi manual oleh user jika ada kontrak macet
 
         # Bersihkan baris sisa template yang tidak terpakai (kalau data < kapasitas template)
@@ -367,7 +388,7 @@ elif files_a01 and files_f06:
         st.download_button(
             label="⬇️ Download Hasil (format template asli, siap di-PDF-kan)",
             data=buffer,
-            file_name=f"Penilaian_Kualitas_Pendanaan_Transaksi_Efek_{report_month:02d}-{report_year}.xlsx",
+            file_name=f"{report_year}-{report_month:02d}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 

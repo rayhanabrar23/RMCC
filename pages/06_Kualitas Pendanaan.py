@@ -154,6 +154,22 @@ with col3:
     files_d02 = st.file_uploader("Upload file D02 (.txt) — opsional, fallback nama", type=["txt"], key="d02", accept_multiple_files=True)
 
 st.markdown("---")
+st.subheader("🛠️ Data Koreksi (opsional)")
+st.caption(
+    "Kalau ada file koreksi (cuma berisi SID/baris tertentu yang nilainya perlu diperbaiki), "
+    "upload di sini. Format file sama seperti A01/F06 biasa, tapi isinya cuma sebagian data "
+    "(yang dikoreksi saja). Data koreksi akan **menimpa** baris dengan SID yang sama di data "
+    "utama, baris lain yang tidak ada di file koreksi tidak akan berubah. Boleh upload "
+    "**lebih dari satu set koreksi** — kalau SID yang sama dikoreksi berkali-kali, koreksi yang "
+    "diupload paling akhir yang dipakai."
+)
+ck1, ck2 = st.columns(2)
+with ck1:
+    files_a01_koreksi = st.file_uploader("Upload file A01 Koreksi (.txt)", type=["txt"], key="a01_koreksi", accept_multiple_files=True)
+with ck2:
+    files_f06_koreksi = st.file_uploader("Upload file F06 Koreksi (.txt)", type=["txt"], key="f06_koreksi", accept_multiple_files=True)
+
+st.markdown("---")
 periode_override = st.checkbox("Override periode pelaporan manual (jika header F06 tidak terbaca / beda bulan antar file)")
 if periode_override:
     c1, c2 = st.columns(2)
@@ -186,18 +202,14 @@ elif files_a01 and files_f06:
                 if cif and nama:
                     d02_by_cif[cif] = nama
 
-        all_results = []
-        detected_periods = []
-
-        for i, (fa01, ff06) in enumerate(zip(files_a01, files_f06), start=1):
+        def parse_a01_f06_pair(fa01, ff06, label):
+            """Parse satu pasang A01+F06 -> DataFrame (kolom SID tetap dipertahankan,
+            dipakai sebagai key untuk koreksi). Dipakai baik untuk batch utama
+            maupun batch koreksi."""
             a01_rows, _ = read_pipe_file(fa01)
             f06_rows, f06_header = read_pipe_file(ff06)
-
             yr, mo, rdate = detect_periode(f06_header)
-            if rdate:
-                detected_periods.append((yr, mo))
 
-            # A01 -> jaminan per no fasilitas (SUM dalam SID yang sama)
             a01_by_fas = {}
             for r in a01_rows:
                 if safe_get(r, 0).strip() != 'D':
@@ -215,7 +227,6 @@ elif files_a01 and files_f06:
                 columns=["fas_key", "Nama Partisipan", "Nilai Jaminan"]
             ) if a01_by_fas else pd.DataFrame(columns=["fas_key", "Nama Partisipan", "Nilai Jaminan"])
 
-            # F06
             f06_records = []
             for r in f06_rows:
                 no_fas    = safe_get(r, col_f06_sid).strip()
@@ -232,8 +243,7 @@ elif files_a01 and files_f06:
                 columns=["SID", "CIF", "Nilai Pendanaan", "Maturity", "Kode Jenis", "Kode Kualitas"]
             )
             if df_f06.empty:
-                st.warning(f"⚠️ Batch #{i}: file F06 ({ff06.name}) tidak menghasilkan baris data.")
-                continue
+                return pd.DataFrame(), yr, mo
 
             df_f06["Tipe Pendanaan"] = df_f06["Kode Jenis"].apply(label_jenis)
             df_f06["Status"] = df_f06["Kode Kualitas"].apply(parse_quality)
@@ -247,14 +257,68 @@ elif files_a01 and files_f06:
                 result = result.drop(columns=["Nama_D02"], errors="ignore")
 
             result["Nilai Jaminan"] = result["Nilai Jaminan"].fillna(0)
-            result["Batch"] = f"{fa01.name} + {ff06.name}"
+            result["Batch"] = label
+            return result, yr, mo
+
+        all_results = []
+        detected_periods = []
+
+        for i, (fa01, ff06) in enumerate(zip(files_a01, files_f06), start=1):
+            label = f"{fa01.name} + {ff06.name}"
+            result, yr, mo = parse_a01_f06_pair(fa01, ff06, label)
+            if result.empty:
+                st.warning(f"⚠️ Batch #{i}: file F06 ({ff06.name}) tidak menghasilkan baris data.")
+                continue
+            if yr and mo:
+                detected_periods.append((yr, mo))
             all_results.append(result)
 
         if not all_results:
             st.error("❌ Tidak ada data valid dari batch manapun.")
             st.stop()
 
-        final = pd.concat(all_results, ignore_index=True)
+        # ---- Susun data utama jadi dict per SID (supaya koreksi bisa menimpa per-SID) ----
+        data_by_sid = {}
+        sid_order = []  # urutan kemunculan SID pertama kali, untuk sorting stabil nanti
+        for result in all_results:
+            for _, row in result.iterrows():
+                sid = row["SID"]
+                if sid not in data_by_sid:
+                    sid_order.append(sid)
+                data_by_sid[sid] = row.to_dict()
+
+        # ---- KOREKSI (opsional, bisa berkali-kali, urut sesuai upload) ----
+        koreksi_count = 0
+        koreksi_sids = set()
+        if files_a01_koreksi and files_f06_koreksi:
+            if len(files_a01_koreksi) != len(files_f06_koreksi):
+                st.error(
+                    f"❌ Jumlah file A01 Koreksi ({len(files_a01_koreksi)}) dan F06 Koreksi "
+                    f"({len(files_f06_koreksi)}) tidak sama. Setiap batch koreksi harus punya pasangan."
+                )
+                st.stop()
+
+            for j, (fa01k, ff06k) in enumerate(zip(files_a01_koreksi, files_f06_koreksi), start=1):
+                label = f"[KOREKSI #{j}] {fa01k.name} + {ff06k.name}"
+                result_k, _, _ = parse_a01_f06_pair(fa01k, ff06k, label)
+                if result_k.empty:
+                    st.warning(f"⚠️ Koreksi #{j}: file F06 ({ff06k.name}) tidak menghasilkan baris data.")
+                    continue
+                for _, row in result_k.iterrows():
+                    sid = row["SID"]
+                    if sid not in data_by_sid:
+                        sid_order.append(sid)
+                    data_by_sid[sid] = row.to_dict()
+                    koreksi_sids.add(sid)
+                    koreksi_count += 1
+
+        final = pd.DataFrame([data_by_sid[sid] for sid in sid_order])
+
+        if koreksi_count > 0:
+            st.success(
+                f"🛠️ {len(koreksi_sids)} SID berhasil dikoreksi (dari {koreksi_count} baris koreksi yang diupload, "
+                f"koreksi berikutnya menimpa koreksi sebelumnya jika SID sama)."
+            )
 
         # ---- Tentukan periode laporan ----
         if periode_override:
@@ -285,11 +349,11 @@ elif files_a01 and files_f06:
                 f"Cek posisi kolom 'F06 - posisi kolom Kode Kualitas' di sidebar, mungkin salah."
             )
 
-        final = final[["Tipe Pendanaan", "Nama Partisipan", "Nilai Pendanaan", "Nilai Jaminan", "Maturity", "Status", "Batch"]]
+        final = final[["SID", "Tipe Pendanaan", "Nama Partisipan", "Nilai Pendanaan", "Nilai Jaminan", "Maturity", "Status", "Batch"]]
         final = final.sort_values(["Tipe Pendanaan", "Nama Partisipan"], na_position="last").reset_index(drop=True)
 
         st.success(
-            f"✅ Berhasil! {len(final)} baris dari {len(all_results)} batch digabung. "
+            f"✅ Berhasil! {len(final)} baris unik (per SID) dari {len(all_results)} batch utama digabung. "
             f"Periode: {report_date.strftime('%d %B %Y')}"
         )
 

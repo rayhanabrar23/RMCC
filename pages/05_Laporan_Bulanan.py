@@ -268,8 +268,8 @@ with tab1:
                 'SEPTEMBER':'P','OKTOBER':'R','NOVEMBER':'S','DESEMBER':'T'
             }
             target_col = MONTH_COL.get(bulan.upper(), 'F')
-            row_disburse   = {'EP':5,'HD':6,'HP':7,'XC':8}
-            row_repayment  = {'EP':16,'HD':17,'HP':18,'XC':19}
+            row_disburse   = {'EP':5,'HP':6,'XC':7}
+            row_repayment  = {'EP':15,'HP':16,'XC':17}
 
             try:
                 wb = load_workbook(master_file)
@@ -287,7 +287,7 @@ with tab1:
                     continue
 
                 words = re.findall(r'[A-Z0-9]+', fname)
-                code = next((c for c in ['EP','HD','HP','XC'] if c in words), None)
+                code = next((c for c in ['EP','HP','XC'] if c in words), None)
                 is_disburse = "DISB" in fname
                 is_repay    = "REPAY" in fname or "RPY" in fname
 

@@ -10,6 +10,8 @@ xlrd
 xlsxwriter
 python-pptx>=1.0.2
 matplotlib>=3.10
+python-pptx>=0.6.23
+matplotlib>=3.8
 
 
 

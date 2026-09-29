@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
+import re
 from openpyxl import load_workbook
 from io import BytesIO
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # Cek login
 if "login_status" not in st.session_state or not st.session_state["login_status"]:
@@ -84,40 +85,171 @@ st.markdown("""
 # ============================
 # KONSTANTA & KONFIGURASI
 # ============================
-REPO_KEY_COL = 'Instrument Code'
+# Nama kolom dicari lewat teks header (bukan nomor baris/kolom tetap),
+# jadi aman kalau posisi tabel di template bergeser.
+TEMPLATE_KEY_HEADER = 'INSTRUMENTCODE'      # header "Instrument Code" / "Instrument\nCode"
+TEMPLATE_VALUE_HEADER = 'FAIRPRICEPHEI'     # header "Fair Price PHEI"
+TEMPLATE_NO_HEADER = 'NO'                   # header "No"
 PHEI_KEY_COL = 'SERIES'
 PHEI_VALUE_COL = 'TODAY FAIR PRICE'
-HEADER_ROW_INDEX = 9
-START_ROW_EXCEL = 11
+DATE_CELL = (2, 1)                          # A2
+PRICE_SCALE_THRESHOLD = 1000                # harga bond normal ~50-150 (% par)
+PRICE_SCALE_DIVISOR = 1_000_000_000_000     # sama seperti formula VLOOKUP lama di template
+TZ = ZoneInfo("Asia/Jakarta")
+
 
 # ============================
-# FUNGSI PEMBERSIH KUNCI
+# FUNGSI PEMBERSIH
 # ============================
-def clean_key_extreme(series):
-    return series.astype(str).str.strip().str.upper().replace(r'[^A-Z0-9]', '', regex=True)
+def norm_header(value):
+    """'Instrument\\nCode' -> 'INSTRUMENTCODE'"""
+    return re.sub(r'[^A-Z0-9]', '', str(value).upper()) if value is not None else ''
+
+
+def clean_key(value):
+    return re.sub(r'[^A-Z0-9]', '', str(value).strip().upper()) if value is not None else ''
+
+
+# ============================
+# DETEKSI STRUKTUR TEMPLATE
+# ============================
+def find_position_table(ws):
+    """
+    Cari tabel 'Current Position': baris header yang memuat 'Fair Price PHEI'.
+    Return: (header_row, col_no, col_key, col_value, data_rows)
+    data_rows = baris di bawah header selama kolom 'No' berisi angka
+    (berhenti otomatis di baris 'Total' / kosong).
+    """
+    header_row = None
+    for r in range(1, ws.max_row + 1):
+        if any(norm_header(ws.cell(r, c).value) == TEMPLATE_VALUE_HEADER
+               for c in range(1, ws.max_column + 1)):
+            header_row = r
+            break
+
+    if header_row is None:
+        raise ValueError("Header 'Fair Price PHEI' tidak ditemukan di template.")
+
+    cols = {}
+    for c in range(1, ws.max_column + 1):
+        h = norm_header(ws.cell(header_row, c).value)
+        if h in (TEMPLATE_NO_HEADER, TEMPLATE_KEY_HEADER, TEMPLATE_VALUE_HEADER):
+            cols[h] = c
+
+    missing = [h for h in (TEMPLATE_NO_HEADER, TEMPLATE_KEY_HEADER, TEMPLATE_VALUE_HEADER)
+               if h not in cols]
+    if missing:
+        raise ValueError(f"Kolom {missing} tidak ditemukan pada baris header {header_row}.")
+
+    data_rows = []
+    r = header_row + 1
+    while r <= ws.max_row:
+        no_val = ws.cell(r, cols[TEMPLATE_NO_HEADER]).value
+        if isinstance(no_val, (int, float)):
+            data_rows.append(r)
+            r += 1
+        else:
+            break  # 'Total' atau baris kosong
+
+    if not data_rows:
+        raise ValueError(f"Tidak ada baris data di bawah header (baris {header_row}).")
+
+    return (header_row, cols[TEMPLATE_NO_HEADER], cols[TEMPLATE_KEY_HEADER],
+            cols[TEMPLATE_VALUE_HEADER], data_rows)
+
+
+# ============================
+# BACA FILE PHEI
+# ============================
+DOTTED_NUMBER = re.compile(r'^\d{1,3}(\.\d{3}){3,}$')   # mis. 102.625.000.000.000
+
+
+def parse_phei_price(value):
+    """
+    Format CSV PHEI: titik = pemisah ribuan, nilai dikali 1e12
+    ('102.625.000.000.000' -> 102.625). Angka biasa (mis. dari xlsx) dibiarkan.
+    """
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return float('nan')
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if DOTTED_NUMBER.match(text):
+        return int(text.replace('.', '')) / PRICE_SCALE_DIVISOR
+    try:
+        return float(text.replace(',', '.'))
+    except ValueError:
+        return float('nan')
+
+
+def load_phei_lookup(uploaded_file):
+    if uploaded_file.name.lower().endswith('.csv'):
+        # CSV PHEI memakai ';' sebagai pemisah; dtype=str agar angka tidak rusak
+        df = pd.read_csv(uploaded_file, encoding='latin1', sep=None,
+                         engine='python', dtype=str)
+    else:
+        df = pd.read_excel(uploaded_file)
+
+    col_map = {str(c).strip().upper(): c for c in df.columns}
+    if PHEI_KEY_COL not in col_map or PHEI_VALUE_COL not in col_map:
+        raise ValueError(
+            f"Kolom '{PHEI_KEY_COL}' / '{PHEI_VALUE_COL}' tidak ada di file PHEI. "
+            f"Kolom yang terbaca: {list(df.columns)}"
+        )
+
+    lookup = pd.DataFrame({
+        'key': df[col_map[PHEI_KEY_COL]].map(clean_key),
+        'price': df[col_map[PHEI_VALUE_COL]].map(parse_phei_price),
+    })
+    lookup = lookup[lookup['key'] != ''].drop_duplicates(subset='key')
+    return dict(zip(lookup['key'], lookup['price']))
+
 
 # ============================
 # FUNGSI PENGOLAHAN DATA UTAMA
 # ============================
-def process_repo_data(df_repo_main, df_phei_lookup):
-    st.info("Sedang mencocokkan data Instrument Code dengan Series PHEI...")
+def process_repo_workbook(repo_bytes, phei_dict):
+    wb = load_workbook(BytesIO(repo_bytes))
+    ws = wb.active
 
-    df_repo_main[REPO_KEY_COL] = clean_key_extreme(df_repo_main[REPO_KEY_COL].fillna(''))
-    df_phei_lookup[PHEI_KEY_COL] = clean_key_extreme(df_phei_lookup[PHEI_KEY_COL].fillna(''))
-    df_phei_lookup = df_phei_lookup.drop_duplicates(subset=[PHEI_KEY_COL])
+    header_row, col_no, col_key, col_val, data_rows = find_position_table(ws)
 
-    df_merged = pd.merge(
-        df_repo_main,
-        df_phei_lookup[[PHEI_KEY_COL, PHEI_VALUE_COL]],
-        left_on=REPO_KEY_COL,
-        right_on=PHEI_KEY_COL,
-        how='left'
-    )
+    # Update tanggal (A2)
+    today_date = datetime.now(TZ).strftime('%d %b %Y')
+    ws.cell(*DATE_CELL, value=f"Daily As of Date : {today_date} - {today_date}")
 
-    if PHEI_VALUE_COL in df_merged.columns:
-        df_merged['Fair Price PHEI'] = pd.to_numeric(df_merged[PHEI_VALUE_COL], errors='coerce')
+    result, unmatched, out_of_range, rescaled = [], [], [], 0
 
-    return df_merged
+    for r in data_rows:
+        no_val = ws.cell(r, col_no).value
+        raw_code = ws.cell(r, col_key).value
+        price = phei_dict.get(clean_key(raw_code))
+
+        if price is None or pd.isna(price):
+            price = None
+            unmatched.append(str(raw_code))
+        else:
+            if price > PRICE_SCALE_THRESHOLD:
+                price = price / PRICE_SCALE_DIVISOR
+                rescaled += 1
+            if not (50 <= price <= 150):
+                out_of_range.append(f"{raw_code} ({price})")
+
+        ws.cell(r, col_val, value=price)   # menimpa formula VLOOKUP lama dengan nilai
+        result.append({'No': int(no_val), 'Instrument Code': raw_code, 'Fair Price PHEI': price})
+
+    out = BytesIO()
+    wb.save(out)
+
+    return {
+        'df': pd.DataFrame(result),
+        'bytes': out.getvalue(),
+        'header_row': header_row,
+        'unmatched': unmatched,
+        'out_of_range': out_of_range,
+        'rescaled': rescaled,
+    }
+
 
 # ============================
 # MAIN UI
@@ -141,65 +273,44 @@ def main():
     st.markdown('</div>', unsafe_allow_html=True)
 
     if repo_file_upload and phei_lookup_file:
-        try:
-            repo_bytes = repo_file_upload.getvalue()
-            df_repo_raw = pd.read_excel(BytesIO(repo_bytes), header=HEADER_ROW_INDEX)
-            df_repo_raw.columns = df_repo_raw.columns.str.replace('\n', ' ').str.strip()
-            df_data_only = df_repo_raw[df_repo_raw['No'].notna()].copy()
+        if st.button("▶ Jalankan Proses Update"):
+            try:
+                phei_dict = load_phei_lookup(phei_lookup_file)
+                res = process_repo_workbook(repo_file_upload.getvalue(), phei_dict)
+                df_result = res['df']
 
-            if phei_lookup_file.name.endswith('.csv'):
-                df_phei = pd.read_csv(phei_lookup_file, encoding='latin1')
-            else:
-                df_phei = pd.read_excel(phei_lookup_file)
-            df_phei.columns = df_phei.columns.str.strip()
+                st.success(
+                    f"✅ Berhasil memproses {len(df_result)} baris data "
+                    f"(tabel Current Position, header di baris {res['header_row']})."
+                )
 
-            if st.button("▶ Jalankan Proses Update"):
-                df_result = process_repo_data(df_data_only, df_phei)
-
-                wb = load_workbook(BytesIO(repo_bytes))
-                sheet = wb.active
-
-                try:
-                    fair_price_col_idx = df_repo_raw.columns.get_loc('Fair Price PHEI') + 1
-                except KeyError:
-                    st.error("Kolom 'Fair Price PHEI' tidak ditemukan di template!")
-                    return
-
-                today_date = datetime.now().strftime('%d %b %Y')
-                date_text = f"Daily As of Date : {today_date} - {today_date}"
-                sheet.cell(row=2, column=1, value=date_text)
-
-                for i, val in enumerate(df_result['Fair Price PHEI']):
-                    current_row = START_ROW_EXCEL + i
-                    final_val = val if pd.notna(val) else None
-                    sheet.cell(row=current_row, column=fair_price_col_idx, value=final_val)
-
-                output_buffer = BytesIO()
-                wb.save(output_buffer)
-
-                st.success(f"✅ Berhasil memproses {len(df_result)} baris data.")
+                if res['rescaled']:
+                    st.info(f"{res['rescaled']} harga dinormalisasi (÷ 1e12) mengikuti formula template lama. Cek preview di bawah.")
+                if res['unmatched']:
+                    st.warning("Instrument Code tidak ditemukan di file PHEI (kolom J dikosongkan): "
+                               + ", ".join(sorted(set(res['unmatched']))))
+                if res['out_of_range']:
+                    st.warning("Harga di luar kisaran 50–150, mohon dicek: "
+                               + ", ".join(res['out_of_range']))
 
                 # Card: Preview
                 st.markdown('<div class="card"><div class="card-title">Preview Hasil (Kolom J)</div>', unsafe_allow_html=True)
-                st.dataframe(
-                    df_result[['No', REPO_KEY_COL, 'Fair Price PHEI']],
-                    use_container_width=True
-                )
+                st.dataframe(df_result, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 
                 # Card: Download
                 st.markdown('<div class="card"><div class="card-title">Unduh Hasil</div>', unsafe_allow_html=True)
                 st.download_button(
                     label="⬇ Unduh File Update",
-                    data=output_buffer.getvalue(),
-                    file_name=f"Reverse Repo Bonds Daily Position {datetime.now().strftime('%Y%m%d')}.xlsx",
+                    data=res['bytes'],
+                    file_name=f"Reverse Repo Bonds Daily Position {datetime.now(TZ).strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
                 )
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        except Exception as e:
-            st.error(f"Terjadi kesalahan: {e}")
+            except Exception as e:
+                st.error(f"Terjadi kesalahan: {e}")
 
     else:
         st.markdown("""
